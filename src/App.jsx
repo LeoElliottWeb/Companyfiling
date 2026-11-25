@@ -23,6 +23,11 @@ export default function RadioStation() {
             directors: 'John Smith, Jane Doe',
             email: 'contact@acmetrading.co.uk',
             confirmationStatementDue: '2027-01-14',
+            lastConfirmations: [
+                { date: '2024-08-14', madeUpTo: '2024-08-01', filedBy: 'companyfiling.online' },
+                { date: '2023-08-14', madeUpTo: '2023-08-01', filedBy: 'companieshouse.gov.uk' },
+                { date: '2022-08-14', madeUpTo: '2022-08-01', filedBy: 'companyfiling.online' },
+            ],
         },
         {
             id: 2,
@@ -32,6 +37,11 @@ export default function RadioStation() {
             directors: 'Sarah Johnson, Michael Brown',
             email: 'info@blueskysolutions.co.uk',
             confirmationStatementDue: '2025-11-02',
+            lastConfirmations: [
+                { date: '2024-11-02', madeUpTo: '2024-10-19', filedBy: 'companieshouse.gov.uk' },
+                { date: '2023-11-02', madeUpTo: '2023-10-19', filedBy: 'companieshouse.gov.uk' },
+                { date: '2022-11-02', madeUpTo: '2022-10-19', filedBy: 'companyfiling.online' },
+            ],
         },
         {
             id: 3,
@@ -40,7 +50,12 @@ export default function RadioStation() {
             yearIncorporated: 2012,
             directors: 'David Wilson, Emma Taylor',
             email: 'hello@greenfieldlogistics.co.uk',
-            confirmationStatementDue: '2026-01-20',
+            confirmationStatementDue: '2027-01-20',
+            lastConfirmations: [
+                { date: '2025-01-20', madeUpTo: '2025-01-06', filedBy: 'companyfiling.online' },
+                { date: '2024-01-20', madeUpTo: '2024-01-06', filedBy: 'companyfiling.online' },
+                { date: '2023-01-20', madeUpTo: '2023-01-06', filedBy: 'companieshouse.gov.uk' },
+            ],
         },
         {
             id: 4,
@@ -50,6 +65,10 @@ export default function RadioStation() {
             directors: 'Chris Evans, Laura White',
             email: 'team@novadigital.co.uk',
             confirmationStatementDue: '2025-09-30',
+            lastConfirmations: [
+                { date: '2024-09-30', madeUpTo: '2024-09-16', filedBy: 'companyfiling.online' },
+                { date: '2023-09-30', madeUpTo: '2023-09-16', filedBy: 'companyfiling.online' },
+            ],
         },
         {
             id: 5,
@@ -59,6 +78,11 @@ export default function RadioStation() {
             directors: 'Robert Clarke, Anna Green',
             email: 'enquiries@pinnacleconsulting.co.uk',
             confirmationStatementDue: '2025-12-15',
+            lastConfirmations: [
+                { date: '2024-12-15', madeUpTo: '2024-12-01', filedBy: 'companieshouse.gov.uk' },
+                { date: '2023-12-15', madeUpTo: '2023-12-01', filedBy: 'companieshouse.gov.uk' },
+                { date: '2022-12-15', madeUpTo: '2022-12-01', filedBy: 'companieshouse.gov.uk' },
+            ],
         },
     ];
 
@@ -148,6 +172,84 @@ export default function RadioStation() {
         setError(null);
         setCompany(null);
         setHasSearched(false);
+    };
+
+    const ConfirmationStatementList = ({ companyData }) => {
+        if (!companyData.lastConfirmations || companyData.lastConfirmations.length === 0) return null;
+
+        return (
+            <div style={{ marginTop: '24px' }}>
+                <h3
+                    style={{
+                        color: '#ffffff',
+                        fontSize: '1.1rem',
+                        marginTop: 0,
+                        marginBottom: '12px',
+                        borderTop: '1px solid #1a1c2e',
+                        paddingTop: '16px',
+                    }}
+                >
+                    Last Confirmation Statements Filed
+                </h3>
+                <div
+                    style={{
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '8px',
+                    }}
+                >
+                    {companyData.lastConfirmations.map((conf, idx) => (
+                        <div
+                            key={idx}
+                            style={{
+                                display: 'flex',
+                                flexDirection: 'column',
+                                gap: '6px',
+                                backgroundColor: '#15182b',
+                                padding: '12px 14px',
+                                borderRadius: '6px',
+                                fontSize: '0.9rem',
+                            }}
+                        >
+                            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                                <span style={{ color: '#ffffff' }}>
+                                    Filed: {formatDate(conf.date)}
+                                </span>
+                                <span style={{ color: '#a0a4b8' }}>
+                                    Made up to: {formatDate(conf.madeUpTo)}
+                                </span>
+                            </div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '4px' }}>
+                                <span style={{ color: '#a0a4b8' }}>Filed via:</span>
+                                <span
+                                    style={{
+                                        color: conf.filedBy === 'companyfiling.online' ? '#38a169' : '#58a6ff',
+                                        fontWeight: 600,
+                                    }}
+                                >
+                                    {conf.filedBy || 'Unknown'}
+                                </span>
+                                {conf.filedBy === 'companyfiling.online' && (
+                                    <span
+                                        style={{
+                                            backgroundColor: '#22543d',
+                                            color: '#48bb78',
+                                            fontSize: '0.7rem',
+                                            padding: '2px 6px',
+                                            borderRadius: '4px',
+                                            fontWeight: 'bold',
+                                            textTransform: 'uppercase',
+                                        }}
+                                    >
+                                        Our Service
+                                    </span>
+                                )}
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            </div>
+        );
     };
 
     return (
@@ -627,6 +729,9 @@ export default function RadioStation() {
                                         </p>
                                     </div>
 
+                                    {/* Last confirmation statements filed */}
+                                    <ConfirmationStatementList companyData={selectedCompany} />
+
                                     <button
                                         onClick={() => setSelectedCompany(null)}
                                         style={{
@@ -811,6 +916,9 @@ export default function RadioStation() {
                                             </span>
                                         </p>
                                     </div>
+
+                                    {/* Last confirmation statements filed */}
+                                    <ConfirmationStatementList companyData={selectedCompany} />
 
                                     <button
                                         onClick={() => setSelectedCompany(null)}
