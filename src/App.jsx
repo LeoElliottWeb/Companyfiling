@@ -15,6 +15,23 @@ const ADMIN_PWD = 'batman123';
 const AUTH_STORAGE_KEY = 'noirsoft_admin_logged_in';
 
 export default function RadioStation() {
+    // Responsive state
+    const [isMobile, setIsMobile] = useState(() =>
+        typeof window !== 'undefined' ? window.innerWidth <= 768 : false
+    );
+    const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+
+    useEffect(() => {
+        const mediaQuery = window.matchMedia('(max-width: 768px)');
+        const handleResize = (e) => {
+            setIsMobile(e.matches);
+            if (!e.matches) setMobileMenuOpen(false);
+        };
+        setIsMobile(mediaQuery.matches);
+        mediaQuery.addEventListener('change', handleResize);
+        return () => mediaQuery.removeEventListener('change', handleResize);
+    }, []);
+
     // Auth state (persisted in localStorage)
     const [isAuthenticated, setIsAuthenticated] = useState(() => {
         return localStorage.getItem(AUTH_STORAGE_KEY) === 'true';
@@ -111,6 +128,7 @@ export default function RadioStation() {
     const handleLogout = () => {
         localStorage.removeItem(AUTH_STORAGE_KEY);
         setIsAuthenticated(false);
+        setMobileMenuOpen(false);
         setView('search');
         setSelectedCompany(null);
         setCompany(null);
@@ -272,6 +290,7 @@ export default function RadioStation() {
         setCompany(null);
         setHasSearched(false);
         setPage(1);
+        setMobileMenuOpen(false);
 
         if (newView === 'companies' || newView === 'dueSoon') {
             fetchSupabaseCompanies(1);
@@ -281,10 +300,10 @@ export default function RadioStation() {
     // ─── LOGIN PAGE ───
     if (!isAuthenticated) {
         return (
-            <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100vh', backgroundColor: '#030511', margin: 0, fontFamily: 'Segoe UI, sans-serif' }}>
-                <div style={{ flex: 1, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '40px 20px' }}>
-                    <div style={{ width: '100%', maxWidth: '420px', backgroundColor: '#0d1020', border: '1px solid #1a1c2e', borderRadius: '12px', padding: '32px', boxSizing: 'border-box' }}>
-                        <h1 style={{ color: '#ffffff', fontSize: '1.8rem', marginTop: 0, marginBottom: '8px', textAlign: 'center' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100vh', backgroundColor: '#030511', margin: 0, fontFamily: 'Segoe UI, sans-serif', overflowX: 'hidden' }}>
+                <div style={{ flex: 1, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: isMobile ? '24px 16px' : '40px 20px', boxSizing: 'border-box' }}>
+                    <div style={{ width: '100%', maxWidth: '420px', backgroundColor: '#0d1020', border: '1px solid #1a1c2e', borderRadius: '12px', padding: isMobile ? '24px 20px' : '32px', boxSizing: 'border-box' }}>
+                        <h1 style={{ color: '#ffffff', fontSize: isMobile ? '1.5rem' : '1.8rem', marginTop: 0, marginBottom: '8px', textAlign: 'center' }}>
                             Company Services
                         </h1>
                         <p style={{ color: '#a0a4b8', fontSize: '0.95rem', marginTop: 0, marginBottom: '28px', textAlign: 'center' }}>
@@ -302,7 +321,7 @@ export default function RadioStation() {
                                     placeholder="Enter email"
                                     autoComplete="username"
                                     required
-                                    style={{ padding: '12px 14px', fontSize: '1rem', borderRadius: '8px', border: '1px solid #1a1c2e', backgroundColor: '#030511', color: '#ffffff', outline: 'none' }}
+                                    style={{ width: '100%', boxSizing: 'border-box', padding: '12px 14px', fontSize: '16px', borderRadius: '8px', border: '1px solid #1a1c2e', backgroundColor: '#030511', color: '#ffffff', outline: 'none' }}
                                 />
                             </div>
 
@@ -316,7 +335,7 @@ export default function RadioStation() {
                                     placeholder="••••••••"
                                     autoComplete="current-password"
                                     required
-                                    style={{ padding: '12px 14px', fontSize: '1rem', borderRadius: '8px', border: '1px solid #1a1c2e', backgroundColor: '#030511', color: '#ffffff', outline: 'none' }}
+                                    style={{ width: '100%', boxSizing: 'border-box', padding: '12px 14px', fontSize: '16px', borderRadius: '8px', border: '1px solid #1a1c2e', backgroundColor: '#030511', color: '#ffffff', outline: 'none' }}
                                 />
                             </div>
 
@@ -328,7 +347,7 @@ export default function RadioStation() {
 
                             <button
                                 type="submit"
-                                style={{ marginTop: '8px', padding: '12px 24px', fontSize: '1rem', fontWeight: 600, borderRadius: '8px', border: 'none', backgroundColor: '#58a6ff', color: '#030511', cursor: 'pointer' }}
+                                style={{ marginTop: '8px', width: '100%', padding: '12px 24px', fontSize: '1rem', fontWeight: 600, borderRadius: '8px', border: 'none', backgroundColor: '#58a6ff', color: '#030511', cursor: 'pointer' }}
                             >
                                 Sign In
                             </button>
@@ -347,63 +366,133 @@ export default function RadioStation() {
 
     // ─── MAIN AUTHENTICATED APP ───
     return (
-        <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100vh', backgroundColor: '#030511', margin: 0, fontFamily: 'Segoe UI, sans-serif' }}>
-            <div style={{ display: 'flex', flex: 1 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100vh', backgroundColor: '#030511', margin: 0, fontFamily: 'Segoe UI, sans-serif', overflowX: 'hidden' }}>
 
-                {/* SIDEBAR */}
-                <div style={{ width: '250px', padding: '40px 20px', backgroundColor: '#030511', borderRight: '1px solid #1a1c2e', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', gap: '20px' }}>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-                        <h2 style={{ color: '#ffffff', fontSize: '1.2rem', marginTop: 0, marginBottom: '10px' }}>Company Services</h2>
-                        <button onClick={() => handleViewChange('search')} style={{ background: 'none', border: 'none', padding: 0, textAlign: 'left', color: view === 'search' ? '#ffffff' : '#58a6ff', fontSize: '1.1rem', cursor: 'pointer', fontWeight: view === 'search' ? 600 : 400 }}>Company filing search</button>
-                        <button onClick={() => handleViewChange('companies')} style={{ background: 'none', border: 'none', padding: 0, textAlign: 'left', color: view === 'companies' ? '#ffffff' : '#58a6ff', fontSize: '1.1rem', cursor: 'pointer', fontWeight: view === 'companies' ? 600 : 400 }}>List of companies</button>
-                        <button onClick={() => handleViewChange('dueSoon')} style={{ background: 'none', border: 'none', padding: 0, textAlign: 'left', color: view === 'dueSoon' ? '#ffffff' : '#58a6ff', fontSize: '1.1rem', cursor: 'pointer', fontWeight: view === 'dueSoon' ? 600 : 400 }}>Get Confirmation Statements due with 3 months</button>
-                    </div>
-
-                    {/* USER & SIGN OUT */}
-                    <div style={{ paddingTop: '20px', borderTop: '1px solid #1a1c2e', display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                        <p style={{ margin: 0, color: '#a0a4b8', fontSize: '0.85rem', wordBreak: 'break-word' }}>
-                            Signed in as<br />
-                            <strong style={{ color: '#ffffff' }}>{ADMIN_UID}</strong>
-                        </p>
+            {/* MOBILE TOP BAR */}
+            {isMobile && (
+                <header style={{ width: '100%', backgroundColor: '#030511', borderBottom: '1px solid #1a1c2e', boxSizing: 'border-box' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 16px' }}>
+                        <h2 style={{ color: '#ffffff', fontSize: '1.15rem', margin: 0 }}>Company Services</h2>
                         <button
-                            onClick={handleLogout}
-                            style={{ padding: '10px 14px', fontSize: '0.9rem', fontWeight: 600, borderRadius: '8px', border: '1px solid #1a1c2e', backgroundColor: '#0d1020', color: '#ff6b6b', cursor: 'pointer', textAlign: 'center' }}
+                            type="button"
+                            onClick={() => setMobileMenuOpen((prev) => !prev)}
+                            aria-label="Toggle navigation menu"
+                            style={{ padding: '8px 12px', fontSize: '0.95rem', fontWeight: 600, borderRadius: '8px', border: '1px solid #1a1c2e', backgroundColor: '#0d1020', color: '#ffffff', cursor: 'pointer' }}
                         >
-                            Sign out
+                            {mobileMenuOpen ? '✕ Close' : '☰ Menu'}
                         </button>
                     </div>
-                </div>
+
+                    {/* MOBILE COLLAPSIBLE NAV DRAWER */}
+                    {mobileMenuOpen && (
+                        <nav style={{ padding: '12px 16px 20px 16px', borderTop: '1px solid #1a1c2e', backgroundColor: '#0d1020', display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                            <button onClick={() => handleViewChange('search')} style={{ background: 'none', border: 'none', padding: '6px 0', textAlign: 'left', color: view === 'search' ? '#ffffff' : '#58a6ff', fontSize: '1.05rem', cursor: 'pointer', fontWeight: view === 'search' ? 600 : 400 }}>Company filing search</button>
+                            <button onClick={() => handleViewChange('companies')} style={{ background: 'none', border: 'none', padding: '6px 0', textAlign: 'left', color: view === 'companies' ? '#ffffff' : '#58a6ff', fontSize: '1.05rem', cursor: 'pointer', fontWeight: view === 'companies' ? 600 : 400 }}>List of companies</button>
+                            <button onClick={() => handleViewChange('dueSoon')} style={{ background: 'none', border: 'none', padding: '6px 0', textAlign: 'left', color: view === 'dueSoon' ? '#ffffff' : '#58a6ff', fontSize: '1.05rem', cursor: 'pointer', fontWeight: view === 'dueSoon' ? 600 : 400 }}>Get Confirmation Statements due with 3 months</button>
+
+                            <div style={{ paddingTop: '14px', borderTop: '1px solid #1a1c2e', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+                                <p style={{ margin: 0, color: '#a0a4b8', fontSize: '0.85rem', wordBreak: 'break-word' }}>
+                                    Signed in as <strong style={{ color: '#ffffff' }}>{ADMIN_UID}</strong>
+                                </p>
+                                <button
+                                    onClick={handleLogout}
+                                    style={{ padding: '8px 14px', fontSize: '0.9rem', fontWeight: 600, borderRadius: '8px', border: '1px solid #1a1c2e', backgroundColor: '#030511', color: '#ff6b6b', cursor: 'pointer' }}
+                                >
+                                    Sign out
+                                </button>
+                            </div>
+                        </nav>
+                    )}
+                </header>
+            )}
+
+            <div style={{ display: 'flex', flex: 1, flexDirection: isMobile ? 'column' : 'row' }}>
+
+                {/* DESKTOP SIDEBAR */}
+                {!isMobile && (
+                    <div style={{ width: '250px', flexShrink: 0, padding: '40px 20px', backgroundColor: '#030511', borderRight: '1px solid #1a1c2e', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', gap: '20px', boxSizing: 'border-box' }}>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                            <h2 style={{ color: '#ffffff', fontSize: '1.2rem', marginTop: 0, marginBottom: '10px' }}>Company Services</h2>
+                            <button onClick={() => handleViewChange('search')} style={{ background: 'none', border: 'none', padding: 0, textAlign: 'left', color: view === 'search' ? '#ffffff' : '#58a6ff', fontSize: '1.1rem', cursor: 'pointer', fontWeight: view === 'search' ? 600 : 400 }}>Company filing search</button>
+                            <button onClick={() => handleViewChange('companies')} style={{ background: 'none', border: 'none', padding: 0, textAlign: 'left', color: view === 'companies' ? '#ffffff' : '#58a6ff', fontSize: '1.1rem', cursor: 'pointer', fontWeight: view === 'companies' ? 600 : 400 }}>List of companies</button>
+                            <button onClick={() => handleViewChange('dueSoon')} style={{ background: 'none', border: 'none', padding: 0, textAlign: 'left', color: view === 'dueSoon' ? '#ffffff' : '#58a6ff', fontSize: '1.1rem', cursor: 'pointer', fontWeight: view === 'dueSoon' ? 600 : 400 }}>Get Confirmation Statements due with 3 months</button>
+                        </div>
+
+                        {/* USER & SIGN OUT */}
+                        <div style={{ paddingTop: '20px', borderTop: '1px solid #1a1c2e', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                            <p style={{ margin: 0, color: '#a0a4b8', fontSize: '0.85rem', wordBreak: 'break-word' }}>
+                                Signed in as<br />
+                                <strong style={{ color: '#ffffff' }}>{ADMIN_UID}</strong>
+                            </p>
+                            <button
+                                onClick={handleLogout}
+                                style={{ padding: '10px 14px', fontSize: '0.9rem', fontWeight: 600, borderRadius: '8px', border: '1px solid #1a1c2e', backgroundColor: '#0d1020', color: '#ff6b6b', cursor: 'pointer', textAlign: 'center' }}
+                            >
+                                Sign out
+                            </button>
+                        </div>
+                    </div>
+                )}
 
                 {/* MAIN CONTENT */}
-                <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'flex-start', alignItems: 'center', padding: '24px 32px 40px 32px', boxSizing: 'border-box' }}>
+                <div style={{ flex: 1, width: '100%', display: 'flex', flexDirection: 'column', justifyContent: 'flex-start', alignItems: 'center', padding: isMobile ? '16px 16px 32px 16px' : '24px 32px 40px 32px', boxSizing: 'border-box' }}>
 
-                    {/* TOP RIGHT STATS BAR (TOTAL TAKEN, TOTAL TRANSACTIONS, TOTAL COST, TOTAL PROFIT) */}
-                    <div style={{ width: '100%', display: 'flex', justifyContent: 'flex-end', marginBottom: '24px' }}>
-                        <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '20px', backgroundColor: '#0d1020', border: '1px solid #1a1c2e', borderRadius: '10px', padding: '12px 20px' }}>
-                            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
-                                <span style={{ color: '#a0a4b8', fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Total Taken</span>
-                                <span style={{ color: '#58a6ff', fontSize: '1.1rem', fontWeight: 700 }}>
+                    {/* STATS BAR (2x2 GRID ON MOBILE, TOP-RIGHT PILL ON DESKTOP) */}
+                    <div style={{ width: '100%', display: 'flex', justifyContent: isMobile ? 'center' : 'flex-end', marginBottom: '24px' }}>
+                        <div style={
+                            isMobile
+                                ? {
+                                    width: '100%',
+                                    display: 'grid',
+                                    gridTemplateColumns: '1fr 1fr',
+                                    gap: '12px',
+                                    backgroundColor: '#0d1020',
+                                    border: '1px solid #1a1c2e',
+                                    borderRadius: '10px',
+                                    padding: '14px',
+                                    boxSizing: 'border-box',
+                                }
+                                : {
+                                    display: 'flex',
+                                    flexWrap: 'wrap',
+                                    alignItems: 'center',
+                                    gap: '20px',
+                                    backgroundColor: '#0d1020',
+                                    border: '1px solid #1a1c2e',
+                                    borderRadius: '10px',
+                                    padding: '12px 20px',
+                                }
+                        }>
+                            <div style={{ display: 'flex', flexDirection: 'column', alignItems: isMobile ? 'flex-start' : 'flex-end' }}>
+                                <span style={{ color: '#a0a4b8', fontSize: '0.72rem', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Total Taken</span>
+                                <span style={{ color: '#58a6ff', fontSize: isMobile ? '1rem' : '1.1rem', fontWeight: 700 }}>
                                     {balTrxLoading ? '...' : formatCurrency(balTrx.total_taken)}
                                 </span>
                             </div>
-                            <div style={{ width: '1px', height: '32px', backgroundColor: '#1a1c2e' }} />
-                            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
-                                <span style={{ color: '#a0a4b8', fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Total Transactions</span>
-                                <span style={{ color: '#ffffff', fontSize: '1.1rem', fontWeight: 700 }}>
+
+                            {!isMobile && <div style={{ width: '1px', height: '32px', backgroundColor: '#1a1c2e' }} />}
+
+                            <div style={{ display: 'flex', flexDirection: 'column', alignItems: isMobile ? 'flex-start' : 'flex-end' }}>
+                                <span style={{ color: '#a0a4b8', fontSize: '0.72rem', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Total Transactions</span>
+                                <span style={{ color: '#ffffff', fontSize: isMobile ? '1rem' : '1.1rem', fontWeight: 700 }}>
                                     {balTrxLoading ? '...' : balTrx.total_transactions.toLocaleString('en-GB')}
                                 </span>
                             </div>
-                            <div style={{ width: '1px', height: '32px', backgroundColor: '#1a1c2e' }} />
-                            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
-                                <span style={{ color: '#a0a4b8', fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Total Cost</span>
-                                <span style={{ color: '#ff6b6b', fontSize: '1.1rem', fontWeight: 700 }}>
+
+                            {!isMobile && <div style={{ width: '1px', height: '32px', backgroundColor: '#1a1c2e' }} />}
+
+                            <div style={{ display: 'flex', flexDirection: 'column', alignItems: isMobile ? 'flex-start' : 'flex-end' }}>
+                                <span style={{ color: '#a0a4b8', fontSize: '0.72rem', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Total Cost</span>
+                                <span style={{ color: '#ff6b6b', fontSize: isMobile ? '1rem' : '1.1rem', fontWeight: 700 }}>
                                     {balTrxLoading ? '...' : formatCurrency(balTrx.total_cost)}
                                 </span>
                             </div>
-                            <div style={{ width: '1px', height: '32px', backgroundColor: '#1a1c2e' }} />
-                            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
-                                <span style={{ color: '#a0a4b8', fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Total Profit</span>
-                                <span style={{ color: balTrx.total_profit < 0 ? '#ff6b6b' : '#4ade80', fontSize: '1.1rem', fontWeight: 700 }}>
+
+                            {!isMobile && <div style={{ width: '1px', height: '32px', backgroundColor: '#1a1c2e' }} />}
+
+                            <div style={{ display: 'flex', flexDirection: 'column', alignItems: isMobile ? 'flex-start' : 'flex-end' }}>
+                                <span style={{ color: '#a0a4b8', fontSize: '0.72rem', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Total Profit</span>
+                                <span style={{ color: balTrx.total_profit < 0 ? '#ff6b6b' : '#4ade80', fontSize: isMobile ? '1rem' : '1.1rem', fontWeight: 700 }}>
                                     {balTrxLoading ? '...' : formatCurrency(balTrx.total_profit)}
                                 </span>
                             </div>
@@ -413,16 +502,28 @@ export default function RadioStation() {
                     {/* SEARCH VIEW */}
                     {view === 'search' && (
                         <>
-                            <h1 style={{ color: '#ffffff', fontSize: '2rem', textAlign: 'center', marginBottom: '20px', marginTop: '0' }}>Automated company filing</h1>
-                            <p style={{ color: '#a0a4b8', fontSize: '1rem', textAlign: 'center', marginTop: 0, marginBottom: '30px', maxWidth: '600px' }}>Search for your company by name or company number to see when your confirmation statement is due.</p>
-                            <form onSubmit={handleSearch} style={{ display: 'flex', flexDirection: 'row', gap: '10px', width: '100%', maxWidth: '600px', marginBottom: '20px' }}>
-                                <input type="text" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Company name or company number" style={{ flex: 1, padding: '12px 16px', fontSize: '1rem', borderRadius: '8px', border: '1px solid #1a1c2e', backgroundColor: '#0d1020', color: '#ffffff', outline: 'none' }} />
-                                <button type="submit" disabled={loading} style={{ padding: '12px 24px', fontSize: '1rem', fontWeight: 600, borderRadius: '8px', border: 'none', backgroundColor: '#58a6ff', color: '#030511', cursor: loading ? 'not-allowed' : 'pointer', opacity: loading ? 0.6 : 1 }}>{loading ? 'Searching...' : 'Search'}</button>
+                            <h1 style={{ color: '#ffffff', fontSize: isMobile ? '1.5rem' : '2rem', textAlign: 'center', marginBottom: '14px', marginTop: '0' }}>Automated company filing</h1>
+                            <p style={{ color: '#a0a4b8', fontSize: isMobile ? '0.95rem' : '1rem', textAlign: 'center', marginTop: 0, marginBottom: '24px', maxWidth: '600px' }}>Search for your company by name or company number to see when your confirmation statement is due.</p>
+                            <form onSubmit={handleSearch} style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: '10px', width: '100%', maxWidth: '600px', marginBottom: '20px' }}>
+                                <input
+                                    type="text"
+                                    value={query}
+                                    onChange={(e) => setQuery(e.target.value)}
+                                    placeholder="Company name or company number"
+                                    style={{ flex: 1, width: '100%', boxSizing: 'border-box', padding: '12px 16px', fontSize: '16px', borderRadius: '8px', border: '1px solid #1a1c2e', backgroundColor: '#0d1020', color: '#ffffff', outline: 'none' }}
+                                />
+                                <button
+                                    type="submit"
+                                    disabled={loading}
+                                    style={{ width: isMobile ? '100%' : 'auto', padding: '12px 24px', fontSize: '1rem', fontWeight: 600, borderRadius: '8px', border: 'none', backgroundColor: '#58a6ff', color: '#030511', cursor: loading ? 'not-allowed' : 'pointer', opacity: loading ? 0.6 : 1 }}
+                                >
+                                    {loading ? 'Searching...' : 'Search'}
+                                </button>
                             </form>
-                            {error && <p style={{ color: '#ff6b6b', fontSize: '1rem', textAlign: 'center', maxWidth: '600px' }}>{error}</p>}
+                            {error && <p style={{ color: '#ff6b6b', fontSize: '0.95rem', textAlign: 'center', maxWidth: '600px' }}>{error}</p>}
                             {company && (
-                                <div style={{ width: '100%', maxWidth: '600px', backgroundColor: '#0d1020', border: '1px solid #1a1c2e', borderRadius: '12px', padding: '24px', boxSizing: 'border-box' }}>
-                                    <h2 style={{ color: '#ffffff', fontSize: '1.4rem', marginTop: 0, marginBottom: '8px' }}>{company.title}</h2>
+                                <div style={{ width: '100%', maxWidth: '600px', backgroundColor: '#0d1020', border: '1px solid #1a1c2e', borderRadius: '12px', padding: isMobile ? '18px' : '24px', boxSizing: 'border-box' }}>
+                                    <h2 style={{ color: '#ffffff', fontSize: isMobile ? '1.2rem' : '1.4rem', marginTop: 0, marginBottom: '8px', wordBreak: 'break-word' }}>{company.title}</h2>
                                     <p style={{ color: '#a0a4b8', fontSize: '0.95rem', margin: '0 0 16px 0' }}>Company number: {company.company_number}</p>
                                     <p style={{ color: '#ffffff', fontSize: '1rem', margin: 0 }}>
                                         <strong>Confirmation statement due:</strong>{' '}
@@ -435,8 +536,14 @@ export default function RadioStation() {
                             )}
                             {!hasSearched && (
                                 <>
-                                    {homeGif && <img src={homeGif} alt="home" style={{ width: '50%', maxHeight: '50vh', objectFit: 'contain', marginTop: '20px' }} />}
-                                    <p style={{ color: '#ffffff', fontSize: '1.2rem', textAlign: 'center', marginTop: '30px' }}>Automatic reminders via email and one-click approvals</p>
+                                    {homeGif && (
+                                        <img
+                                            src={homeGif}
+                                            alt="home"
+                                            style={{ width: isMobile ? '90%' : '50%', maxWidth: '500px', maxHeight: '45vh', objectFit: 'contain', marginTop: '16px' }}
+                                        />
+                                    )}
+                                    <p style={{ color: '#ffffff', fontSize: isMobile ? '1rem' : '1.2rem', textAlign: 'center', marginTop: '24px', maxWidth: '500px' }}>Automatic reminders via email and one-click approvals</p>
                                 </>
                             )}
                         </>
@@ -445,8 +552,8 @@ export default function RadioStation() {
                     {/* COMPANIES LIST VIEW */}
                     {view === 'companies' && (
                         <>
-                            <h1 style={{ color: '#ffffff', fontSize: '2rem', textAlign: 'center', marginBottom: '20px', marginTop: '0' }}>List of companies</h1>
-                            <p style={{ color: '#a0a4b8', fontSize: '1rem', textAlign: 'center', marginTop: 0, marginBottom: '30px', maxWidth: '600px' }}>
+                            <h1 style={{ color: '#ffffff', fontSize: isMobile ? '1.5rem' : '2rem', textAlign: 'center', marginBottom: '14px', marginTop: '0' }}>List of companies</h1>
+                            <p style={{ color: '#a0a4b8', fontSize: isMobile ? '0.95rem' : '1rem', textAlign: 'center', marginTop: 0, marginBottom: '24px', maxWidth: '600px' }}>
                                 Companies stored in the database {totalCount > 0 && `(showing ${(page - 1) * itemsPerPage + 1}-${Math.min(page * itemsPerPage, totalCount)} of ${totalCount})`}.
                             </p>
 
@@ -462,18 +569,18 @@ export default function RadioStation() {
 
                                     {/* Scrollable List Container */}
                                     <div style={{
-                                        maxHeight: '60vh',
+                                        maxHeight: isMobile ? '55vh' : '60vh',
                                         overflowY: 'auto',
                                         display: 'flex',
                                         flexDirection: 'column',
                                         gap: '12px',
-                                        paddingRight: '10px',
+                                        paddingRight: isMobile ? '4px' : '10px',
                                         marginBottom: '20px'
                                     }}>
                                         {supabaseCompanies.map((c) => (
-                                            <button key={c.id} onClick={() => setSelectedCompany(c)} style={{ textAlign: 'left', padding: '16px 20px', fontSize: '1rem', borderRadius: '8px', border: '1px solid #1a1c2e', backgroundColor: '#0d1020', color: '#ffffff', cursor: 'pointer', display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
-                                                    <span style={{ fontWeight: 600 }}>{c.company_name}</span>
+                                            <button key={c.id} onClick={() => setSelectedCompany(c)} style={{ width: '100%', boxSizing: 'border-box', textAlign: 'left', padding: isMobile ? '14px' : '16px 20px', fontSize: '1rem', borderRadius: '8px', border: '1px solid #1a1c2e', backgroundColor: '#0d1020', color: '#ffffff', cursor: 'pointer', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px', width: '100%' }}>
+                                                    <span style={{ fontWeight: 600, wordBreak: 'break-word' }}>{c.company_name}</span>
                                                     {isDueWithinThreeMonths(c.next_confirmation_statement) && (
                                                         <span style={{ padding: '4px 8px', borderRadius: '12px', backgroundColor: '#e53e3e', color: '#ffffff', fontSize: '0.75rem', fontWeight: 600, textTransform: 'uppercase', whiteSpace: 'nowrap' }}>Due soon</span>
                                                     )}
@@ -484,11 +591,11 @@ export default function RadioStation() {
                                     </div>
 
                                     {/* Pagination Controls */}
-                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%', paddingTop: '10px', borderTop: '1px solid #1a1c2e' }}>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%', paddingTop: '10px', borderTop: '1px solid #1a1c2e', gap: '8px' }}>
                                         <button
                                             onClick={() => fetchSupabaseCompanies(page - 1)}
                                             disabled={page === 1 || loading}
-                                            style={{ padding: '10px 16px', borderRadius: '8px', border: '1px solid #1a1c2e', backgroundColor: 'transparent', color: page === 1 ? '#555' : '#58a6ff', cursor: page === 1 ? 'not-allowed' : 'pointer' }}
+                                            style={{ padding: '10px 14px', borderRadius: '8px', border: '1px solid #1a1c2e', backgroundColor: 'transparent', color: page === 1 ? '#555' : '#58a6ff', cursor: page === 1 ? 'not-allowed' : 'pointer' }}
                                         >
                                             ← Previous
                                         </button>
@@ -496,7 +603,7 @@ export default function RadioStation() {
                                         <button
                                             onClick={() => fetchSupabaseCompanies(page + 1)}
                                             disabled={page * itemsPerPage >= totalCount || loading}
-                                            style={{ padding: '10px 16px', borderRadius: '8px', border: '1px solid #1a1c2e', backgroundColor: 'transparent', color: page * itemsPerPage >= totalCount ? '#555' : '#58a6ff', cursor: page * itemsPerPage >= totalCount ? 'not-allowed' : 'pointer' }}
+                                            style={{ padding: '10px 14px', borderRadius: '8px', border: '1px solid #1a1c2e', backgroundColor: 'transparent', color: page * itemsPerPage >= totalCount ? '#555' : '#58a6ff', cursor: page * itemsPerPage >= totalCount ? 'not-allowed' : 'pointer' }}
                                         >
                                             Next →
                                         </button>
@@ -505,8 +612,8 @@ export default function RadioStation() {
                             )}
 
                             {selectedCompany && (
-                                <div style={{ width: '100%', maxWidth: '600px', backgroundColor: '#0d1020', border: '1px solid #1a1c2e', borderRadius: '12px', padding: '24px', boxSizing: 'border-box' }}>
-                                    <h2 style={{ color: '#ffffff', fontSize: '1.4rem', marginTop: 0, marginBottom: '16px' }}>{selectedCompany.company_name}</h2>
+                                <div style={{ width: '100%', maxWidth: '600px', backgroundColor: '#0d1020', border: '1px solid #1a1c2e', borderRadius: '12px', padding: isMobile ? '18px' : '24px', boxSizing: 'border-box' }}>
+                                    <h2 style={{ color: '#ffffff', fontSize: isMobile ? '1.2rem' : '1.4rem', marginTop: 0, marginBottom: '16px', wordBreak: 'break-word' }}>{selectedCompany.company_name}</h2>
                                     <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                                         <p style={{ margin: 0, color: '#ffffff' }}><strong style={{ color: '#a0a4b8' }}>Company Number: </strong>{selectedCompany.company_number}</p>
                                         <p style={{ margin: 0, color: '#ffffff' }}><strong style={{ color: '#a0a4b8' }}>Confirmation Statement Due: </strong>{formatDate(selectedCompany.next_confirmation_statement)}</p>
@@ -523,8 +630,8 @@ export default function RadioStation() {
                     {/* DUE SOON VIEW */}
                     {view === 'dueSoon' && (
                         <>
-                            <h1 style={{ color: '#ffffff', fontSize: '2rem', textAlign: 'center', marginBottom: '20px', marginTop: '0' }}>Confirmation statements due</h1>
-                            <p style={{ color: '#a0a4b8', fontSize: '1rem', textAlign: 'center', marginTop: 0, marginBottom: '30px', maxWidth: '600px' }}>Companies with confirmation statements due within the next 3 months.</p>
+                            <h1 style={{ color: '#ffffff', fontSize: isMobile ? '1.5rem' : '2rem', textAlign: 'center', marginBottom: '14px', marginTop: '0' }}>Confirmation statements due</h1>
+                            <p style={{ color: '#a0a4b8', fontSize: isMobile ? '0.95rem' : '1rem', textAlign: 'center', marginTop: 0, marginBottom: '24px', maxWidth: '600px' }}>Companies with confirmation statements due within the next 3 months.</p>
 
                             {loading && <p style={{ color: '#58a6ff' }}>Loading...</p>}
 
@@ -536,18 +643,18 @@ export default function RadioStation() {
 
                                         {/* Scrollable List Container */}
                                         <div style={{
-                                            maxHeight: '60vh',
+                                            maxHeight: isMobile ? '55vh' : '60vh',
                                             overflowY: 'auto',
                                             display: 'flex',
                                             flexDirection: 'column',
                                             gap: '12px',
-                                            paddingRight: '10px',
+                                            paddingRight: isMobile ? '4px' : '10px',
                                             marginBottom: '20px'
                                         }}>
                                             {supabaseCompanies.filter((c) => isDueWithinThreeMonths(c.next_confirmation_statement)).map((c) => (
-                                                <button key={c.id} onClick={() => setSelectedCompany(c)} style={{ textAlign: 'left', padding: '16px 20px', fontSize: '1rem', borderRadius: '8px', border: '1px solid #1a1c2e', backgroundColor: '#0d1020', color: '#ffffff', cursor: 'pointer', display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
-                                                        <span style={{ fontWeight: 600 }}>{c.company_name}</span>
+                                                <button key={c.id} onClick={() => setSelectedCompany(c)} style={{ width: '100%', boxSizing: 'border-box', textAlign: 'left', padding: isMobile ? '14px' : '16px 20px', fontSize: '1rem', borderRadius: '8px', border: '1px solid #1a1c2e', backgroundColor: '#0d1020', color: '#ffffff', cursor: 'pointer', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px', width: '100%' }}>
+                                                        <span style={{ fontWeight: 600, wordBreak: 'break-word' }}>{c.company_name}</span>
                                                         <span style={{ padding: '4px 8px', borderRadius: '12px', backgroundColor: '#e53e3e', color: '#ffffff', fontSize: '0.75rem', fontWeight: 600, textTransform: 'uppercase', whiteSpace: 'nowrap' }}>Due {formatDate(c.next_confirmation_statement)}</span>
                                                     </div>
                                                     <span style={{ color: '#a0a4b8', fontSize: '0.9rem' }}>Company No: {c.company_number}</span>
@@ -556,11 +663,11 @@ export default function RadioStation() {
                                         </div>
 
                                         {/* Pagination Controls */}
-                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%', paddingTop: '10px', borderTop: '1px solid #1a1c2e' }}>
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%', paddingTop: '10px', borderTop: '1px solid #1a1c2e', gap: '8px' }}>
                                             <button
                                                 onClick={() => fetchSupabaseCompanies(page - 1)}
                                                 disabled={page === 1 || loading}
-                                                style={{ padding: '10px 16px', borderRadius: '8px', border: '1px solid #1a1c2e', backgroundColor: 'transparent', color: page === 1 ? '#555' : '#58a6ff', cursor: page === 1 ? 'not-allowed' : 'pointer' }}
+                                                style={{ padding: '10px 14px', borderRadius: '8px', border: '1px solid #1a1c2e', backgroundColor: 'transparent', color: page === 1 ? '#555' : '#58a6ff', cursor: page === 1 ? 'not-allowed' : 'pointer' }}
                                             >
                                                 ← Previous
                                             </button>
@@ -568,7 +675,7 @@ export default function RadioStation() {
                                             <button
                                                 onClick={() => fetchSupabaseCompanies(page + 1)}
                                                 disabled={page * itemsPerPage >= totalCount || loading}
-                                                style={{ padding: '10px 16px', borderRadius: '8px', border: '1px solid #1a1c2e', backgroundColor: 'transparent', color: page * itemsPerPage >= totalCount ? '#555' : '#58a6ff', cursor: page * itemsPerPage >= totalCount ? 'not-allowed' : 'pointer' }}
+                                                style={{ padding: '10px 14px', borderRadius: '8px', border: '1px solid #1a1c2e', backgroundColor: 'transparent', color: page * itemsPerPage >= totalCount ? '#555' : '#58a6ff', cursor: page * itemsPerPage >= totalCount ? 'not-allowed' : 'pointer' }}
                                             >
                                                 Next →
                                             </button>
@@ -578,8 +685,8 @@ export default function RadioStation() {
                             )}
 
                             {selectedCompany && (
-                                <div style={{ width: '100%', maxWidth: '600px', backgroundColor: '#0d1020', border: '1px solid #1a1c2e', borderRadius: '12px', padding: '24px', boxSizing: 'border-box' }}>
-                                    <h2 style={{ color: '#ffffff', fontSize: '1.4rem', marginTop: 0, marginBottom: '16px' }}>{selectedCompany.company_name}</h2>
+                                <div style={{ width: '100%', maxWidth: '600px', backgroundColor: '#0d1020', border: '1px solid #1a1c2e', borderRadius: '12px', padding: isMobile ? '18px' : '24px', boxSizing: 'border-box' }}>
+                                    <h2 style={{ color: '#ffffff', fontSize: isMobile ? '1.2rem' : '1.4rem', marginTop: 0, marginBottom: '16px', wordBreak: 'break-word' }}>{selectedCompany.company_name}</h2>
                                     <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                                         <p style={{ margin: 0, color: '#ffffff' }}><strong style={{ color: '#a0a4b8' }}>Company Number: </strong>{selectedCompany.company_number}</p>
                                         <p style={{ margin: 0, color: '#ffffff' }}><strong style={{ color: '#a0a4b8' }}>Confirmation Statement Due: </strong>{formatDate(selectedCompany.next_confirmation_statement)}</p>
@@ -594,7 +701,7 @@ export default function RadioStation() {
             </div>
 
             {/* FOOTER */}
-            <footer style={{ borderTop: '1px solid #1a1c2e', padding: '24px 20px', textAlign: 'center', backgroundColor: '#030511', color: '#a0a4b8', fontSize: '0.9rem' }}>
+            <footer style={{ borderTop: '1px solid #1a1c2e', padding: '20px 16px', textAlign: 'center', backgroundColor: '#030511', color: '#a0a4b8', fontSize: '0.85rem' }}>
                 <p style={{ margin: '0 0 8px 0' }}>NOIRSOFT LTD &bull; Registration number 15337702</p>
                 <p style={{ margin: 0 }}>Email: <a href="mailto:Sales@NoirSoft.net" style={{ color: '#58a6ff', textDecoration: 'none' }}>Sales@NoirSoft.net</a></p>
             </footer>
