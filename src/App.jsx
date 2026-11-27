@@ -9,7 +9,21 @@ const SUPABASE_URL = 'https://xptlootjhzsunvsqqkro.supabase.co';
 const CH_API_BASE = import.meta.env.VITE_CH_PROXY_URL || '/api/ch';
 const CH_API_KEY = import.meta.env.VITE_CH_API_KEY || 'ca7f120b-6b10-43db-8043-d8602205fd58';
 
+// Hardcoded admin credentials
+const ADMIN_UID = 'NormAdmin2026AAA1';
+const ADMIN_PWD = 'OKSdkjdksndki34';
+const AUTH_STORAGE_KEY = 'noirsoft_admin_logged_in';
+
 export default function RadioStation() {
+    // Auth state (persisted in localStorage)
+    const [isAuthenticated, setIsAuthenticated] = useState(() => {
+        return localStorage.getItem(AUTH_STORAGE_KEY) === 'true';
+    });
+    const [username, setUsername] = useState('');
+    const [password, setPassword] = useState('');
+    const [authError, setAuthError] = useState(null);
+
+    // Search state
     const [query, setQuery] = useState('');
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState(null);
@@ -25,6 +39,33 @@ export default function RadioStation() {
     const [page, setPage] = useState(1);
     const [totalCount, setTotalCount] = useState(0);
     const itemsPerPage = 100;
+
+    // ─── Handle Login ───
+    const handleLogin = (e) => {
+        e.preventDefault();
+        setAuthError(null);
+
+        if (username.trim() === ADMIN_UID && password === ADMIN_PWD) {
+            localStorage.setItem(AUTH_STORAGE_KEY, 'true');
+            setIsAuthenticated(true);
+            setUsername('');
+            setPassword('');
+        } else {
+            setAuthError('Invalid username or password.');
+        }
+    };
+
+    // ─── Handle Logout ───
+    const handleLogout = () => {
+        localStorage.removeItem(AUTH_STORAGE_KEY);
+        setIsAuthenticated(false);
+        setView('search');
+        setSelectedCompany(null);
+        setCompany(null);
+        setHasSearched(false);
+        setError(null);
+        setSupabaseCompanies([]);
+    };
 
     // ─── Fetch companies from Supabase (Direct API Call) ───
     const fetchSupabaseCompanies = async (pageNumber = 1) => {
@@ -178,16 +219,100 @@ export default function RadioStation() {
         }
     };
 
+    // ─── LOGIN PAGE ───
+    if (!isAuthenticated) {
+        return (
+            <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100vh', backgroundColor: '#030511', margin: 0, fontFamily: 'Segoe UI, sans-serif' }}>
+                <div style={{ flex: 1, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '40px 20px' }}>
+                    <div style={{ width: '100%', maxWidth: '420px', backgroundColor: '#0d1020', border: '1px solid #1a1c2e', borderRadius: '12px', padding: '32px', boxSizing: 'border-box' }}>
+                        <h1 style={{ color: '#ffffff', fontSize: '1.8rem', marginTop: 0, marginBottom: '8px', textAlign: 'center' }}>
+                            Company Services
+                        </h1>
+                        <p style={{ color: '#a0a4b8', fontSize: '0.95rem', marginTop: 0, marginBottom: '28px', textAlign: 'center' }}>
+                            Sign in to access automated company filing
+                        </p>
+
+                        <form onSubmit={handleLogin} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                                <label htmlFor="username" style={{ color: '#a0a4b8', fontSize: '0.9rem' }}>Username</label>
+                                <input
+                                    id="username"
+                                    type="text"
+                                    value={username}
+                                    onChange={(e) => setUsername(e.target.value)}
+                                    placeholder="Enter username"
+                                    autoComplete="username"
+                                    required
+                                    style={{ padding: '12px 14px', fontSize: '1rem', borderRadius: '8px', border: '1px solid #1a1c2e', backgroundColor: '#030511', color: '#ffffff', outline: 'none' }}
+                                />
+                            </div>
+
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                                <label htmlFor="password" style={{ color: '#a0a4b8', fontSize: '0.9rem' }}>Password</label>
+                                <input
+                                    id="password"
+                                    type="password"
+                                    value={password}
+                                    onChange={(e) => setPassword(e.target.value)}
+                                    placeholder="••••••••"
+                                    autoComplete="current-password"
+                                    required
+                                    style={{ padding: '12px 14px', fontSize: '1rem', borderRadius: '8px', border: '1px solid #1a1c2e', backgroundColor: '#030511', color: '#ffffff', outline: 'none' }}
+                                />
+                            </div>
+
+                            {authError && (
+                                <p style={{ color: '#ff6b6b', fontSize: '0.9rem', margin: 0, textAlign: 'center' }}>
+                                    {authError}
+                                </p>
+                            )}
+
+                            <button
+                                type="submit"
+                                style={{ marginTop: '8px', padding: '12px 24px', fontSize: '1rem', fontWeight: 600, borderRadius: '8px', border: 'none', backgroundColor: '#58a6ff', color: '#030511', cursor: 'pointer' }}
+                            >
+                                Sign In
+                            </button>
+                        </form>
+                    </div>
+                </div>
+
+                {/* FOOTER */}
+                <footer style={{ borderTop: '1px solid #1a1c2e', padding: '24px 20px', textAlign: 'center', backgroundColor: '#030511', color: '#a0a4b8', fontSize: '0.9rem' }}>
+                    <p style={{ margin: '0 0 8px 0' }}>NOIRSOFT LTD &bull; Registration number 15337702</p>
+                    <p style={{ margin: 0 }}>Email: <a href="mailto:Sales@NoirSoft.net" style={{ color: '#58a6ff', textDecoration: 'none' }}>Sales@NoirSoft.net</a></p>
+                </footer>
+            </div>
+        );
+    }
+
+    // ─── MAIN AUTHENTICATED APP ───
     return (
         <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100vh', backgroundColor: '#030511', margin: 0, fontFamily: 'Segoe UI, sans-serif' }}>
             <div style={{ display: 'flex', flex: 1 }}>
 
                 {/* SIDEBAR */}
-                <div style={{ width: '250px', padding: '40px 20px', backgroundColor: '#030511', borderRight: '1px solid #1a1c2e', display: 'flex', flexDirection: 'column', gap: '20px' }}>
-                    <h2 style={{ color: '#ffffff', fontSize: '1.2rem', marginTop: 0, marginBottom: '10px' }}>Company Services</h2>
-                    <button onClick={() => handleViewChange('search')} style={{ background: 'none', border: 'none', padding: 0, textAlign: 'left', color: view === 'search' ? '#ffffff' : '#58a6ff', fontSize: '1.1rem', cursor: 'pointer', fontWeight: view === 'search' ? 600 : 400 }}>Company filing search</button>
-                    <button onClick={() => handleViewChange('companies')} style={{ background: 'none', border: 'none', padding: 0, textAlign: 'left', color: view === 'companies' ? '#ffffff' : '#58a6ff', fontSize: '1.1rem', cursor: 'pointer', fontWeight: view === 'companies' ? 600 : 400 }}>List of companies</button>
-                    <button onClick={() => handleViewChange('dueSoon')} style={{ background: 'none', border: 'none', padding: 0, textAlign: 'left', color: view === 'dueSoon' ? '#ffffff' : '#58a6ff', fontSize: '1.1rem', cursor: 'pointer', fontWeight: view === 'dueSoon' ? 600 : 400 }}>Get Confirmation Statements due with 3 months</button>
+                <div style={{ width: '250px', padding: '40px 20px', backgroundColor: '#030511', borderRight: '1px solid #1a1c2e', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', gap: '20px' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                        <h2 style={{ color: '#ffffff', fontSize: '1.2rem', marginTop: 0, marginBottom: '10px' }}>Company Services</h2>
+                        <button onClick={() => handleViewChange('search')} style={{ background: 'none', border: 'none', padding: 0, textAlign: 'left', color: view === 'search' ? '#ffffff' : '#58a6ff', fontSize: '1.1rem', cursor: 'pointer', fontWeight: view === 'search' ? 600 : 400 }}>Company filing search</button>
+                        <button onClick={() => handleViewChange('companies')} style={{ background: 'none', border: 'none', padding: 0, textAlign: 'left', color: view === 'companies' ? '#ffffff' : '#58a6ff', fontSize: '1.1rem', cursor: 'pointer', fontWeight: view === 'companies' ? 600 : 400 }}>List of companies</button>
+                        <button onClick={() => handleViewChange('dueSoon')} style={{ background: 'none', border: 'none', padding: 0, textAlign: 'left', color: view === 'dueSoon' ? '#ffffff' : '#58a6ff', fontSize: '1.1rem', cursor: 'pointer', fontWeight: view === 'dueSoon' ? 600 : 400 }}>Get Confirmation Statements due with 3 months</button>
+                    </div>
+
+                    {/* USER & SIGN OUT */}
+                    <div style={{ paddingTop: '20px', borderTop: '1px solid #1a1c2e', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                        <p style={{ margin: 0, color: '#a0a4b8', fontSize: '0.85rem', wordBreak: 'break-word' }}>
+                            Signed in as<br />
+                            <strong style={{ color: '#ffffff' }}>{ADMIN_UID}</strong>
+                        </p>
+                        <button
+                            onClick={handleLogout}
+                            style={{ padding: '10px 14px', fontSize: '0.9rem', fontWeight: 600, borderRadius: '8px', border: '1px solid #1a1c2e', backgroundColor: '#0d1020', color: '#ff6b6b', cursor: 'pointer', textAlign: 'center' }}
+                        >
+                            Sign out
+                        </button>
+                    </div>
                 </div>
 
                 {/* MAIN CONTENT */}
