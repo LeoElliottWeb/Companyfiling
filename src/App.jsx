@@ -428,7 +428,7 @@ export default function RadioStation() {
                         <nav style={{ padding: '12px 16px 20px 16px', borderTop: '1px solid #1a1c2e', backgroundColor: '#0d1020', display: 'flex', flexDirection: 'column', gap: '14px' }}>
                             <button onClick={() => handleViewChange('search')} style={{ background: 'none', border: 'none', padding: '6px 0', textAlign: 'left', color: view === 'search' ? '#ffffff' : '#58a6ff', fontSize: '1.05rem', cursor: 'pointer', fontWeight: view === 'search' ? 600 : 400 }}>Company filing search</button>
                             <button onClick={() => handleViewChange('companies')} style={{ background: 'none', border: 'none', padding: '6px 0', textAlign: 'left', color: view === 'companies' ? '#ffffff' : '#58a6ff', fontSize: '1.05rem', cursor: 'pointer', fontWeight: view === 'companies' ? 600 : 400 }}>List of companies</button>
-                            <button onClick={() => handleViewChange('dueSoon')} style={{ background: 'none', border: 'none', padding: '6px 0', textAlign: 'left', color: view === 'dueSoon' ? '#ffffff' : '#58a6ff', fontSize: '1.05rem', cursor: 'pointer', fontWeight: view === 'dueSoon' ? 600 : 400 }}>Get Confirmation Statements due with 3 months</button>
+                            <button onClick={() => handleViewChange('dueSoon')} style={{ background: 'none', border: 'none', padding: '6px 0', textAlign: 'left', color: view === 'dueSoon' ? '#ffffff' : '#58a6ff', fontSize: '1.05rem', cursor: 'pointer', fontWeight: view === 'dueSoon' ? 600 : 400 }}>Get Confirmation Statements due within 3 months</button>
 
                             <div style={{ paddingTop: '14px', borderTop: '1px solid #1a1c2e', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
                                 <p style={{ margin: 0, color: '#a0a4b8', fontSize: '0.85rem', wordBreak: 'break-word' }}>
@@ -455,7 +455,7 @@ export default function RadioStation() {
                             <h2 style={{ color: '#ffffff', fontSize: '1.2rem', marginTop: 0, marginBottom: '10px' }}>Company Services</h2>
                             <button onClick={() => handleViewChange('search')} style={{ background: 'none', border: 'none', padding: 0, textAlign: 'left', color: view === 'search' ? '#ffffff' : '#58a6ff', fontSize: '1.1rem', cursor: 'pointer', fontWeight: view === 'search' ? 600 : 400 }}>Company filing search</button>
                             <button onClick={() => handleViewChange('companies')} style={{ background: 'none', border: 'none', padding: 0, textAlign: 'left', color: view === 'companies' ? '#ffffff' : '#58a6ff', fontSize: '1.1rem', cursor: 'pointer', fontWeight: view === 'companies' ? 600 : 400 }}>List of companies</button>
-                            <button onClick={() => handleViewChange('dueSoon')} style={{ background: 'none', border: 'none', padding: 0, textAlign: 'left', color: view === 'dueSoon' ? '#ffffff' : '#58a6ff', fontSize: '1.1rem', cursor: 'pointer', fontWeight: view === 'dueSoon' ? 600 : 400 }}>Get Confirmation Statements due with 3 months</button>
+                            <button onClick={() => handleViewChange('dueSoon')} style={{ background: 'none', border: 'none', padding: 0, textAlign: 'left', color: view === 'dueSoon' ? '#ffffff' : '#58a6ff', fontSize: '1.1rem', cursor: 'pointer', fontWeight: view === 'dueSoon' ? 600 : 400 }}>Get Confirmation Statements due within 3 months</button>
                         </div>
 
                         {/* USER & SIGN OUT */}
@@ -543,7 +543,7 @@ export default function RadioStation() {
                     {view === 'search' && (
                         <>
                             <h1 style={{ color: '#ffffff', fontSize: isMobile ? '1.5rem' : '2rem', textAlign: 'center', marginBottom: '14px', marginTop: '0' }}>Automated company filing</h1>
-                            <p style={{ color: '#a0a4b8', fontSize: isMobile ? '0.95rem' : '1rem', textAlign: 'center', marginTop: 0, marginBottom: '24px', maxWidth: '600px' }}>Search for your company by name or company number to see when your confirmation statement is due.</p>
+                            <p style={{ color: '#a0a4b8', fontSize: isMobile ? '0.95rem' : '1rem', textAlign: 'center', marginTop: 0, marginBottom: '24px', maxWidth: '600px' }}>Search for a company by name or company number to see when their confirmation statement is due.</p>
                             <form onSubmit={handleSearch} style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: '10px', width: '100%', maxWidth: '600px', marginBottom: '20px' }}>
                                 <input
                                     type="text"
