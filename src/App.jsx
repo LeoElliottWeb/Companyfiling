@@ -1,7 +1,9 @@
 ﻿import React, { useState } from 'react';
 import homeGif from './home.gif';
 
-const SUPABASE_ANON_KEY = 'sb_publishable_oGXmxWNXvypN8XyjM71sBA_b_DINXJo';
+// Use the key directly or fallback to env variable if you set one up later
+const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || 'sb_publishable_oGXmxWNXvypN8XyjM71sBA_b_DINXJo';
+const SUPABASE_URL = 'https://xptlootjhzsunvsqqkro.supabase.co';
 
 export default function RadioStation() {
     const [query, setQuery] = useState('');
@@ -16,21 +18,27 @@ export default function RadioStation() {
 
     // Supabase state
     const [supabaseCompanies, setSupabaseCompanies] = useState([]);
+    const [page, setPage] = useState(1);
+    const [totalCount, setTotalCount] = useState(0);
+    const itemsPerPage = 100;
 
     const CH_API_KEY = 'ca7f120b-6b10-43db-8043-d8602205fd58';
 
-    // ─── Fetch companies from Supabase via Vite Proxy ───
-    const fetchSupabaseCompanies = async () => {
+    // ─── Fetch companies from Supabase (Direct API Call) ───
+    const fetchSupabaseCompanies = async (pageNumber = 1) => {
         setLoading(true);
         setError(null);
 
         try {
-            const res = await fetch('/api/supabase/rest/v1/companies?select=*&order=id.desc&limit=100', {
+            const offset = (pageNumber - 1) * itemsPerPage;
+
+            const res = await fetch(`${SUPABASE_URL}/rest/v1/companies?select=*&order=id.desc&limit=${itemsPerPage}&offset=${offset}`, {
                 method: 'GET',
                 headers: {
                     'apikey': SUPABASE_ANON_KEY,
                     'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
-                    'Content-Type': 'application/json'
+                    'Content-Type': 'application/json',
+                    'Prefer': 'count=exact' // Request total count for pagination
                 }
             });
 
@@ -39,8 +47,16 @@ export default function RadioStation() {
                 throw new Error(`Supabase Error (${res.status}): ${errorText}`);
             }
 
+            // Extract total count from headers (format is usually "0-99/1234")
+            const contentRange = res.headers.get('content-range');
+            if (contentRange) {
+                const total = parseInt(contentRange.split('/')[1], 10);
+                setTotalCount(total);
+            }
+
             const data = await res.json();
             setSupabaseCompanies(data || []);
+            setPage(pageNumber);
         } catch (err) {
             console.error('[Supabase fetch error]', err);
             setError('Failed to load database records: ' + err.message);
@@ -119,9 +135,10 @@ export default function RadioStation() {
         setError(null);
         setCompany(null);
         setHasSearched(false);
+        setPage(1);
 
         if (newView === 'companies' || newView === 'dueSoon') {
-            fetchSupabaseCompanies();
+            fetchSupabaseCompanies(1);
         }
     };
 
@@ -171,7 +188,9 @@ export default function RadioStation() {
                     {view === 'companies' && (
                         <>
                             <h1 style={{ color: '#ffffff', fontSize: '2rem', textAlign: 'center', marginBottom: '20px', marginTop: '0' }}>List of companies</h1>
-                            <p style={{ color: '#a0a4b8', fontSize: '1rem', textAlign: 'center', marginTop: 0, marginBottom: '30px', maxWidth: '600px' }}>Companies stored in the database (showing latest 100).</p>
+                            <p style={{ color: '#a0a4b8', fontSize: '1rem', textAlign: 'center', marginTop: 0, marginBottom: '30px', maxWidth: '600px' }}>
+                                Companies stored in the database {totalCount > 0 && `(showing ${(page - 1) * itemsPerPage + 1}-${Math.min(page * itemsPerPage, totalCount)} of ${totalCount})`}.
+                            </p>
 
                             {loading && <p style={{ color: '#58a6ff' }}>Loading database records...</p>}
                             {error && <p style={{ color: '#ff6b6b', textAlign: 'center', maxWidth: '600px' }}>{error}</p>}
@@ -181,18 +200,49 @@ export default function RadioStation() {
                             )}
 
                             {!selectedCompany && !loading && !error && supabaseCompanies.length > 0 && (
-                                <div style={{ width: '100%', maxWidth: '600px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                                    {supabaseCompanies.map((c) => (
-                                        <button key={c.id} onClick={() => setSelectedCompany(c)} style={{ textAlign: 'left', padding: '16px 20px', fontSize: '1rem', borderRadius: '8px', border: '1px solid #1a1c2e', backgroundColor: '#0d1020', color: '#ffffff', cursor: 'pointer', display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
-                                                <span style={{ fontWeight: 600 }}>{c.company_name}</span>
-                                                {isDueWithinThreeMonths(c.next_confirmation_statement) && (
-                                                    <span style={{ padding: '4px 8px', borderRadius: '12px', backgroundColor: '#e53e3e', color: '#ffffff', fontSize: '0.75rem', fontWeight: 600, textTransform: 'uppercase', whiteSpace: 'nowrap' }}>Due soon</span>
-                                                )}
-                                            </div>
-                                            <span style={{ color: '#a0a4b8', fontSize: '0.9rem' }}>Company No: {c.company_number}</span>
+                                <div style={{ width: '100%', maxWidth: '600px', display: 'flex', flexDirection: 'column' }}>
+
+                                    {/* Scrollable List Container */}
+                                    <div style={{
+                                        maxHeight: '60vh',
+                                        overflowY: 'auto',
+                                        display: 'flex',
+                                        flexDirection: 'column',
+                                        gap: '12px',
+                                        paddingRight: '10px', // Add slight padding so scrollbar doesn't overlap content
+                                        marginBottom: '20px'
+                                    }}>
+                                        {supabaseCompanies.map((c) => (
+                                            <button key={c.id} onClick={() => setSelectedCompany(c)} style={{ textAlign: 'left', padding: '16px 20px', fontSize: '1rem', borderRadius: '8px', border: '1px solid #1a1c2e', backgroundColor: '#0d1020', color: '#ffffff', cursor: 'pointer', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
+                                                    <span style={{ fontWeight: 600 }}>{c.company_name}</span>
+                                                    {isDueWithinThreeMonths(c.next_confirmation_statement) && (
+                                                        <span style={{ padding: '4px 8px', borderRadius: '12px', backgroundColor: '#e53e3e', color: '#ffffff', fontSize: '0.75rem', fontWeight: 600, textTransform: 'uppercase', whiteSpace: 'nowrap' }}>Due soon</span>
+                                                    )}
+                                                </div>
+                                                <span style={{ color: '#a0a4b8', fontSize: '0.9rem' }}>Company No: {c.company_number}</span>
+                                            </button>
+                                        ))}
+                                    </div>
+
+                                    {/* Pagination Controls */}
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%', paddingTop: '10px', borderTop: '1px solid #1a1c2e' }}>
+                                        <button
+                                            onClick={() => fetchSupabaseCompanies(page - 1)}
+                                            disabled={page === 1 || loading}
+                                            style={{ padding: '10px 16px', borderRadius: '8px', border: '1px solid #1a1c2e', backgroundColor: 'transparent', color: page === 1 ? '#555' : '#58a6ff', cursor: page === 1 ? 'not-allowed' : 'pointer' }}
+                                        >
+                                            ← Previous
                                         </button>
-                                    ))}
+                                        <span style={{ color: '#a0a4b8', fontSize: '0.9rem' }}>Page {page}</span>
+                                        <button
+                                            onClick={() => fetchSupabaseCompanies(page + 1)}
+                                            disabled={page * itemsPerPage >= totalCount || loading}
+                                            style={{ padding: '10px 16px', borderRadius: '8px', border: '1px solid #1a1c2e', backgroundColor: 'transparent', color: page * itemsPerPage >= totalCount ? '#555' : '#58a6ff', cursor: page * itemsPerPage >= totalCount ? 'not-allowed' : 'pointer' }}
+                                        >
+                                            Next →
+                                        </button>
+                                    </div>
                                 </div>
                             )}
 
@@ -221,19 +271,50 @@ export default function RadioStation() {
                             {loading && <p style={{ color: '#58a6ff' }}>Loading...</p>}
 
                             {!selectedCompany && !loading && supabaseCompanies.filter((c) => isDueWithinThreeMonths(c.next_confirmation_statement)).length === 0 ? (
-                                <p style={{ color: '#a0a4b8', textAlign: 'center' }}>No confirmation statements are due within the next 3 months (in the latest 100 records).</p>
+                                <p style={{ color: '#a0a4b8', textAlign: 'center' }}>No confirmation statements are due within the next 3 months (in the current records).</p>
                             ) : (
                                 !selectedCompany && !loading && (
-                                    <div style={{ width: '100%', maxWidth: '600px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                                        {supabaseCompanies.filter((c) => isDueWithinThreeMonths(c.next_confirmation_statement)).map((c) => (
-                                            <button key={c.id} onClick={() => setSelectedCompany(c)} style={{ textAlign: 'left', padding: '16px 20px', fontSize: '1rem', borderRadius: '8px', border: '1px solid #1a1c2e', backgroundColor: '#0d1020', color: '#ffffff', cursor: 'pointer', display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
-                                                    <span style={{ fontWeight: 600 }}>{c.company_name}</span>
-                                                    <span style={{ padding: '4px 8px', borderRadius: '12px', backgroundColor: '#e53e3e', color: '#ffffff', fontSize: '0.75rem', fontWeight: 600, textTransform: 'uppercase', whiteSpace: 'nowrap' }}>Due {formatDate(c.next_confirmation_statement)}</span>
-                                                </div>
-                                                <span style={{ color: '#a0a4b8', fontSize: '0.9rem' }}>Company No: {c.company_number}</span>
+                                    <div style={{ width: '100%', maxWidth: '600px', display: 'flex', flexDirection: 'column' }}>
+
+                                        {/* Scrollable List Container */}
+                                        <div style={{
+                                            maxHeight: '60vh',
+                                            overflowY: 'auto',
+                                            display: 'flex',
+                                            flexDirection: 'column',
+                                            gap: '12px',
+                                            paddingRight: '10px',
+                                            marginBottom: '20px'
+                                        }}>
+                                            {supabaseCompanies.filter((c) => isDueWithinThreeMonths(c.next_confirmation_statement)).map((c) => (
+                                                <button key={c.id} onClick={() => setSelectedCompany(c)} style={{ textAlign: 'left', padding: '16px 20px', fontSize: '1rem', borderRadius: '8px', border: '1px solid #1a1c2e', backgroundColor: '#0d1020', color: '#ffffff', cursor: 'pointer', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
+                                                        <span style={{ fontWeight: 600 }}>{c.company_name}</span>
+                                                        <span style={{ padding: '4px 8px', borderRadius: '12px', backgroundColor: '#e53e3e', color: '#ffffff', fontSize: '0.75rem', fontWeight: 600, textTransform: 'uppercase', whiteSpace: 'nowrap' }}>Due {formatDate(c.next_confirmation_statement)}</span>
+                                                    </div>
+                                                    <span style={{ color: '#a0a4b8', fontSize: '0.9rem' }}>Company No: {c.company_number}</span>
+                                                </button>
+                                            ))}
+                                        </div>
+
+                                        {/* Pagination Controls */}
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%', paddingTop: '10px', borderTop: '1px solid #1a1c2e' }}>
+                                            <button
+                                                onClick={() => fetchSupabaseCompanies(page - 1)}
+                                                disabled={page === 1 || loading}
+                                                style={{ padding: '10px 16px', borderRadius: '8px', border: '1px solid #1a1c2e', backgroundColor: 'transparent', color: page === 1 ? '#555' : '#58a6ff', cursor: page === 1 ? 'not-allowed' : 'pointer' }}
+                                            >
+                                                ← Previous
                                             </button>
-                                        ))}
+                                            <span style={{ color: '#a0a4b8', fontSize: '0.9rem' }}>Page {page}</span>
+                                            <button
+                                                onClick={() => fetchSupabaseCompanies(page + 1)}
+                                                disabled={page * itemsPerPage >= totalCount || loading}
+                                                style={{ padding: '10px 16px', borderRadius: '8px', border: '1px solid #1a1c2e', backgroundColor: 'transparent', color: page * itemsPerPage >= totalCount ? '#555' : '#58a6ff', cursor: page * itemsPerPage >= totalCount ? 'not-allowed' : 'pointer' }}
+                                            >
+                                                Next →
+                                            </button>
+                                        </div>
                                     </div>
                                 )
                             )}
