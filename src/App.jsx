@@ -10,7 +10,7 @@ const CH_API_BASE = import.meta.env.VITE_CH_PROXY_URL || '/api/ch';
 const CH_API_KEY = import.meta.env.VITE_CH_API_KEY || 'ca7f120b-6b10-43db-8043-d8602205fd58';
 
 // Hardcoded admin credentials
-const ADMIN_UID = 'NormAdmin2026AAA1';
+const ADMIN_UID = 'Sales@noirsoft.net';
 const ADMIN_PWD = 'OKSdkjdksndki34';
 const AUTH_STORAGE_KEY = 'noirsoft_admin_logged_in';
 
@@ -45,13 +45,13 @@ export default function RadioStation() {
         e.preventDefault();
         setAuthError(null);
 
-        if (username.trim() === ADMIN_UID && password === ADMIN_PWD) {
+        if (username.trim().toLowerCase() === ADMIN_UID.toLowerCase() && password === ADMIN_PWD) {
             localStorage.setItem(AUTH_STORAGE_KEY, 'true');
             setIsAuthenticated(true);
             setUsername('');
             setPassword('');
         } else {
-            setAuthError('Invalid username or password.');
+            setAuthError('Invalid email or password.');
         }
     };
 
@@ -234,13 +234,13 @@ export default function RadioStation() {
 
                         <form onSubmit={handleLogin} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
                             <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                                <label htmlFor="username" style={{ color: '#a0a4b8', fontSize: '0.9rem' }}>Username</label>
+                                <label htmlFor="username" style={{ color: '#a0a4b8', fontSize: '0.9rem' }}>Email</label>
                                 <input
                                     id="username"
-                                    type="text"
+                                    type="email"
                                     value={username}
                                     onChange={(e) => setUsername(e.target.value)}
-                                    placeholder="Enter username"
+                                    placeholder="Enter email"
                                     autoComplete="username"
                                     required
                                     style={{ padding: '12px 14px', fontSize: '1rem', borderRadius: '8px', border: '1px solid #1a1c2e', backgroundColor: '#030511', color: '#ffffff', outline: 'none' }}
