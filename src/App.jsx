@@ -178,6 +178,21 @@ export default function RadioStation() {
         }
     };
 
+    // ─── Format Companies House officer name ("SURNAME, First Name" -> "First Name Surname") ───
+    const formatOfficerName = (name) => {
+        if (!name) return '';
+        if (name.includes(',')) {
+            const [surname, ...rest] = name.split(',');
+            const firstNames = rest.join(',').trim();
+            const formattedSurname = surname
+                .trim()
+                .toLowerCase()
+                .replace(/\b\w/g, (char) => char.toUpperCase());
+            return `${firstNames} ${formattedSurname}`.trim();
+        }
+        return name;
+    };
+
     // ─── Companies House search (Uses /api/ch proxy on both Local and Live) ───
     const handleSearch = async (e) => {
         e.preventDefault();
@@ -226,20 +241,44 @@ export default function RadioStation() {
 
             const raw = items[0];
             let confirmationStatement = null;
+            let directors = [];
 
-            // Fetch full company profile to get the confirmation statement due date
+            // Fetch full company profile and officers in parallel
             if (raw.company_number) {
-                try {
-                    const profileRes = await fetch(
-                        `${CH_API_BASE}/company/${encodeURIComponent(raw.company_number)}`,
-                        { headers }
-                    );
-                    if (profileRes.ok) {
-                        const profileData = await profileRes.json();
+                const companyNum = encodeURIComponent(raw.company_number);
+                const [profileResult, officersResult] = await Promise.allSettled([
+                    fetch(`${CH_API_BASE}/company/${companyNum}`, { headers }),
+                    fetch(`${CH_API_BASE}/company/${companyNum}/officers`, { headers }),
+                ]);
+
+                if (profileResult.status === 'fulfilled' && profileResult.value.ok) {
+                    try {
+                        const profileData = await profileResult.value.json();
                         confirmationStatement = profileData.confirmation_statement || null;
+                    } catch (profileErr) {
+                        console.warn('[CH Profile Parse Warning]', profileErr);
                     }
-                } catch (profileErr) {
-                    console.warn('[CH Profile Fetch Warning]', profileErr);
+                } else if (profileResult.status === 'rejected') {
+                    console.warn('[CH Profile Fetch Warning]', profileResult.reason);
+                }
+
+                if (officersResult.status === 'fulfilled' && officersResult.value.ok) {
+                    try {
+                        const officersData = await officersResult.value.json();
+                        const officerItems = officersData.items || [];
+                        directors = officerItems
+                            .filter(
+                                (officer) =>
+                                    !officer.resigned_on &&
+                                    (officer.officer_role || '').toLowerCase().includes('director')
+                            )
+                            .map((officer) => formatOfficerName(officer.name))
+                            .filter(Boolean);
+                    } catch (officersErr) {
+                        console.warn('[CH Officers Parse Warning]', officersErr);
+                    }
+                } else if (officersResult.status === 'rejected') {
+                    console.warn('[CH Officers Fetch Warning]', officersResult.reason);
                 }
             }
 
@@ -248,6 +287,7 @@ export default function RadioStation() {
                 company_number: raw.company_number,
                 address_snippet: raw.address_snippet,
                 confirmation_statement: confirmationStatement,
+                directors,
             });
         } catch (err) {
             console.error('[CH Search Error]', err);
@@ -525,10 +565,16 @@ export default function RadioStation() {
                                 <div style={{ width: '100%', maxWidth: '600px', backgroundColor: '#0d1020', border: '1px solid #1a1c2e', borderRadius: '12px', padding: isMobile ? '18px' : '24px', boxSizing: 'border-box' }}>
                                     <h2 style={{ color: '#ffffff', fontSize: isMobile ? '1.2rem' : '1.4rem', marginTop: 0, marginBottom: '8px', wordBreak: 'break-word' }}>{company.title}</h2>
                                     <p style={{ color: '#a0a4b8', fontSize: '0.95rem', margin: '0 0 16px 0' }}>Company number: {company.company_number}</p>
-                                    <p style={{ color: '#ffffff', fontSize: '1rem', margin: 0 }}>
+                                    <p style={{ color: '#ffffff', fontSize: '1rem', margin: '0 0 12px 0' }}>
                                         <strong>Confirmation statement due:</strong>{' '}
                                         {company.confirmation_statement?.next_due
                                             ? formatDate(company.confirmation_statement.next_due)
+                                            : 'Not available'}
+                                    </p>
+                                    <p style={{ color: '#ffffff', fontSize: '1rem', margin: 0 }}>
+                                        <strong>{company.directors?.length === 1 ? 'Director' : 'Directors'}:</strong>{' '}
+                                        {company.directors && company.directors.length > 0
+                                            ? company.directors.join(', ')
                                             : 'Not available'}
                                     </p>
                                     <p style={{ color: '#a0a4b8', fontSize: '0.85rem', marginTop: '16px', marginBottom: 0 }}>{company.address_snippet}</p>
