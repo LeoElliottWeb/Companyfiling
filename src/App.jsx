@@ -5,6 +5,10 @@ import homeGif from './home.gif';
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || 'sb_publishable_oGXmxWNXvypN8XyjM71sBA_b_DINXJo';
 const SUPABASE_URL = 'https://xptlootjhzsunvsqqkro.supabase.co';
 
+// Uses the Vite proxy locally and your host rewrite (/api/ch) on the live site
+const CH_API_BASE = import.meta.env.VITE_CH_PROXY_URL || '/api/ch';
+const CH_API_KEY = import.meta.env.VITE_CH_API_KEY || 'ca7f120b-6b10-43db-8043-d8602205fd58';
+
 export default function RadioStation() {
     const [query, setQuery] = useState('');
     const [loading, setLoading] = useState(false);
@@ -21,8 +25,6 @@ export default function RadioStation() {
     const [page, setPage] = useState(1);
     const [totalCount, setTotalCount] = useState(0);
     const itemsPerPage = 100;
-
-    const CH_API_KEY = 'ca7f120b-6b10-43db-8043-d8602205fd58';
 
     // ─── Fetch companies from Supabase (Direct API Call) ───
     const fetchSupabaseCompanies = async (pageNumber = 1) => {
@@ -65,7 +67,7 @@ export default function RadioStation() {
         }
     };
 
-    // ─── Companies House search (Handles Local vs Live) ───
+    // ─── Companies House search (Uses /api/ch proxy on both Local and Live) ───
     const handleSearch = async (e) => {
         e.preventDefault();
         const trimmed = query.trim();
@@ -75,27 +77,21 @@ export default function RadioStation() {
             setHasSearched(true);
             return;
         }
+
         setLoading(true);
         setError(null);
         setCompany(null);
         setHasSearched(true);
+
         try {
             const authHeader = 'Basic ' + btoa(`${CH_API_KEY}:`);
+            const headers = {
+                Authorization: authHeader,
+                Accept: 'application/json',
+            };
 
-            // Check if we are running on localhost
-            const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
-
-            // Use the proxy locally, and the direct API URL on the live site
-            const url = isLocal
-                ? `/api/ch/search/companies?q=${encodeURIComponent(trimmed)}`
-                : `https://api.company-information.service.gov.uk/search/companies?q=${encodeURIComponent(trimmed)}`;
-
-            const res = await fetch(url, {
-                headers: {
-                    Authorization: authHeader,
-                    Accept: 'application/json'
-                },
-            });
+            const searchUrl = `${CH_API_BASE}/search/companies?q=${encodeURIComponent(trimmed)}`;
+            const res = await fetch(searchUrl, { headers });
 
             if (!res.ok) {
                 if (res.status === 401) throw new Error('Unauthorized. Check your Companies House API key.');
@@ -104,19 +100,44 @@ export default function RadioStation() {
                 throw new Error(`Search failed (${res.status}).`);
             }
 
+            const contentType = res.headers.get('content-type') || '';
+            if (!contentType.includes('application/json')) {
+                throw new Error('Live proxy (/api/ch) is not configured on your host yet. Add the rewrite rule for /api/ch.');
+            }
+
             const data = await res.json();
             const items = data.items || [];
+
             if (items.length === 0) {
                 setError('No companies found matching that search.');
-            } else {
-                const raw = items[0];
-                setCompany({
-                    title: raw.title,
-                    company_number: raw.company_number,
-                    address_snippet: raw.address_snippet,
-                    confirmation_statement: null,
-                });
+                return;
             }
+
+            const raw = items[0];
+            let confirmationStatement = null;
+
+            // Fetch full company profile to get the confirmation statement due date
+            if (raw.company_number) {
+                try {
+                    const profileRes = await fetch(
+                        `${CH_API_BASE}/company/${encodeURIComponent(raw.company_number)}`,
+                        { headers }
+                    );
+                    if (profileRes.ok) {
+                        const profileData = await profileRes.json();
+                        confirmationStatement = profileData.confirmation_statement || null;
+                    }
+                } catch (profileErr) {
+                    console.warn('[CH Profile Fetch Warning]', profileErr);
+                }
+            }
+
+            setCompany({
+                title: raw.title,
+                company_number: raw.company_number,
+                address_snippet: raw.address_snippet,
+                confirmation_statement: confirmationStatement,
+            });
         } catch (err) {
             console.error('[CH Search Error]', err);
             setError(err.message || 'Could not retrieve company details.');
@@ -186,7 +207,12 @@ export default function RadioStation() {
                                 <div style={{ width: '100%', maxWidth: '600px', backgroundColor: '#0d1020', border: '1px solid #1a1c2e', borderRadius: '12px', padding: '24px', boxSizing: 'border-box' }}>
                                     <h2 style={{ color: '#ffffff', fontSize: '1.4rem', marginTop: 0, marginBottom: '8px' }}>{company.title}</h2>
                                     <p style={{ color: '#a0a4b8', fontSize: '0.95rem', margin: '0 0 16px 0' }}>Company number: {company.company_number}</p>
-                                    <p style={{ color: '#ffffff', fontSize: '1rem', margin: 0 }}><strong>Confirmation statement due:</strong>{' '}{company.confirmation_statement ? formatDate(company.confirmation_statement.next_due) : 'Data not available via basic search API'}</p>
+                                    <p style={{ color: '#ffffff', fontSize: '1rem', margin: 0 }}>
+                                        <strong>Confirmation statement due:</strong>{' '}
+                                        {company.confirmation_statement?.next_due
+                                            ? formatDate(company.confirmation_statement.next_due)
+                                            : 'Not available'}
+                                    </p>
                                     <p style={{ color: '#a0a4b8', fontSize: '0.85rem', marginTop: '16px', marginBottom: 0 }}>{company.address_snippet}</p>
                                 </div>
                             )}
