@@ -65,7 +65,7 @@ export default function RadioStation() {
         }
     };
 
-    // ─── Companies House search ───
+    // ─── Companies House search (Handles Local vs Live) ───
     const handleSearch = async (e) => {
         e.preventDefault();
         const trimmed = query.trim();
@@ -81,15 +81,29 @@ export default function RadioStation() {
         setHasSearched(true);
         try {
             const authHeader = 'Basic ' + btoa(`${CH_API_KEY}:`);
-            const url = `/api/ch/search/companies?q=${encodeURIComponent(trimmed)}`;
+
+            // Check if we are running on localhost
+            const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+
+            // Use the proxy locally, and the direct API URL on the live site
+            const url = isLocal
+                ? `/api/ch/search/companies?q=${encodeURIComponent(trimmed)}`
+                : `https://api.company-information.service.gov.uk/search/companies?q=${encodeURIComponent(trimmed)}`;
+
             const res = await fetch(url, {
-                headers: { Authorization: authHeader, Accept: 'application/json' },
+                headers: {
+                    Authorization: authHeader,
+                    Accept: 'application/json'
+                },
             });
+
             if (!res.ok) {
                 if (res.status === 401) throw new Error('Unauthorized. Check your Companies House API key.');
                 if (res.status === 404) throw new Error('No companies found.');
+                if (res.status === 403) throw new Error('Forbidden. Check that your domain is allowed for this API key.');
                 throw new Error(`Search failed (${res.status}).`);
             }
+
             const data = await res.json();
             const items = data.items || [];
             if (items.length === 0) {
@@ -104,6 +118,7 @@ export default function RadioStation() {
                 });
             }
         } catch (err) {
+            console.error('[CH Search Error]', err);
             setError(err.message || 'Could not retrieve company details.');
         } finally {
             setLoading(false);
@@ -209,7 +224,7 @@ export default function RadioStation() {
                                         display: 'flex',
                                         flexDirection: 'column',
                                         gap: '12px',
-                                        paddingRight: '10px', // Add slight padding so scrollbar doesn't overlap content
+                                        paddingRight: '10px',
                                         marginBottom: '20px'
                                     }}>
                                         {supabaseCompanies.map((c) => (
