@@ -1,4 +1,4 @@
-﻿import React, { useState } from 'react';
+﻿import React, { useState, useEffect } from 'react';
 import homeGif from './home.gif';
 
 // Use the key directly or fallback to env variable if you set one up later
@@ -23,6 +23,15 @@ export default function RadioStation() {
     const [password, setPassword] = useState('');
     const [authError, setAuthError] = useState(null);
 
+    // Financial stats state (from baltrx table)
+    const [balTrx, setBalTrx] = useState({
+        total_taken: 0,
+        total_transactions: 0,
+        total_cost: 0,
+        total_profit: 0,
+    });
+    const [balTrxLoading, setBalTrxLoading] = useState(false);
+
     // Search state
     const [query, setQuery] = useState('');
     const [loading, setLoading] = useState(false);
@@ -39,6 +48,49 @@ export default function RadioStation() {
     const [page, setPage] = useState(1);
     const [totalCount, setTotalCount] = useState(0);
     const itemsPerPage = 100;
+
+    // ─── Fetch financial stats from baltrx ───
+    const fetchBalTrx = async () => {
+        setBalTrxLoading(true);
+        try {
+            const res = await fetch(
+                `${SUPABASE_URL}/rest/v1/baltrx?select=total_taken,total_transactions,total_cost,total_profit&order=id.desc&limit=1`,
+                {
+                    method: 'GET',
+                    headers: {
+                        'apikey': SUPABASE_ANON_KEY,
+                        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+                        'Content-Type': 'application/json',
+                    },
+                }
+            );
+
+            if (!res.ok) {
+                const errorText = await res.text();
+                throw new Error(`baltrx Error (${res.status}): ${errorText}`);
+            }
+
+            const data = await res.json();
+            if (Array.isArray(data) && data.length > 0) {
+                setBalTrx({
+                    total_taken: Number(data[0].total_taken ?? 0),
+                    total_transactions: Number(data[0].total_transactions ?? 0),
+                    total_cost: Number(data[0].total_cost ?? 0),
+                    total_profit: Number(data[0].total_profit ?? 0),
+                });
+            }
+        } catch (err) {
+            console.error('[baltrx fetch error]', err);
+        } finally {
+            setBalTrxLoading(false);
+        }
+    };
+
+    useEffect(() => {
+        if (isAuthenticated) {
+            fetchBalTrx();
+        }
+    }, [isAuthenticated]);
 
     // ─── Handle Login ───
     const handleLogin = (e) => {
@@ -187,6 +239,13 @@ export default function RadioStation() {
         }
     };
 
+    const formatCurrency = (amount) => {
+        return new Intl.NumberFormat('en-GB', {
+            style: 'currency',
+            currency: 'GBP',
+        }).format(amount);
+    };
+
     const formatDate = (dateString) => {
         if (!dateString) return 'Not available';
         const date = new Date(dateString);
@@ -316,7 +375,40 @@ export default function RadioStation() {
                 </div>
 
                 {/* MAIN CONTENT */}
-                <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'flex-start', alignItems: 'center', padding: '40px 20px', boxSizing: 'border-box' }}>
+                <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'flex-start', alignItems: 'center', padding: '24px 32px 40px 32px', boxSizing: 'border-box' }}>
+
+                    {/* TOP RIGHT STATS BAR (TOTAL TAKEN, TOTAL TRANSACTIONS, TOTAL COST, TOTAL PROFIT) */}
+                    <div style={{ width: '100%', display: 'flex', justifyContent: 'flex-end', marginBottom: '24px' }}>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '20px', backgroundColor: '#0d1020', border: '1px solid #1a1c2e', borderRadius: '10px', padding: '12px 20px' }}>
+                            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
+                                <span style={{ color: '#a0a4b8', fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Total Taken</span>
+                                <span style={{ color: '#58a6ff', fontSize: '1.1rem', fontWeight: 700 }}>
+                                    {balTrxLoading ? '...' : formatCurrency(balTrx.total_taken)}
+                                </span>
+                            </div>
+                            <div style={{ width: '1px', height: '32px', backgroundColor: '#1a1c2e' }} />
+                            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
+                                <span style={{ color: '#a0a4b8', fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Total Transactions</span>
+                                <span style={{ color: '#ffffff', fontSize: '1.1rem', fontWeight: 700 }}>
+                                    {balTrxLoading ? '...' : balTrx.total_transactions.toLocaleString('en-GB')}
+                                </span>
+                            </div>
+                            <div style={{ width: '1px', height: '32px', backgroundColor: '#1a1c2e' }} />
+                            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
+                                <span style={{ color: '#a0a4b8', fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Total Cost</span>
+                                <span style={{ color: '#ff6b6b', fontSize: '1.1rem', fontWeight: 700 }}>
+                                    {balTrxLoading ? '...' : formatCurrency(balTrx.total_cost)}
+                                </span>
+                            </div>
+                            <div style={{ width: '1px', height: '32px', backgroundColor: '#1a1c2e' }} />
+                            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
+                                <span style={{ color: '#a0a4b8', fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Total Profit</span>
+                                <span style={{ color: balTrx.total_profit < 0 ? '#ff6b6b' : '#4ade80', fontSize: '1.1rem', fontWeight: 700 }}>
+                                    {balTrxLoading ? '...' : formatCurrency(balTrx.total_profit)}
+                                </span>
+                            </div>
+                        </div>
+                    </div>
 
                     {/* SEARCH VIEW */}
                     {view === 'search' && (
