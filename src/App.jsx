@@ -347,7 +347,7 @@ export default function RadioStation() {
                             Company Services
                         </h1>
                         <p style={{ color: '#a0a4b8', fontSize: '0.95rem', marginTop: 0, marginBottom: '28px', textAlign: 'center' }}>
-                            Sign in to access automated company filing
+                            Sign in to access automated company confirmation statement filing
                         </p>
 
                         <form onSubmit={handleLogin} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
@@ -542,7 +542,7 @@ export default function RadioStation() {
                     {/* SEARCH VIEW */}
                     {view === 'search' && (
                         <>
-                            <h1 style={{ color: '#ffffff', fontSize: isMobile ? '1.5rem' : '2rem', textAlign: 'center', marginBottom: '14px', marginTop: '0' }}>Automated company filing</h1>
+                            <h1 style={{ color: '#ffffff', fontSize: isMobile ? '1.5rem' : '2rem', textAlign: 'center', marginBottom: '14px', marginTop: '0' }}>Automated company confirmation statement filing</h1>
                             <p style={{ color: '#a0a4b8', fontSize: isMobile ? '0.95rem' : '1rem', textAlign: 'center', marginTop: 0, marginBottom: '24px', maxWidth: '600px' }}>Search for a company by name or company number to see when their confirmation statement is due.</p>
                             <form onSubmit={handleSearch} style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: '10px', width: '100%', maxWidth: '600px', marginBottom: '20px' }}>
                                 <input
