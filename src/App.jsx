@@ -11,7 +11,7 @@ const CH_API_KEY = import.meta.env.VITE_CH_API_KEY || 'ca7f120b-6b10-43db-8043-d
 
 // Hardcoded admin credentials
 const ADMIN_UID = 'Sales@noirsoft.net';
-const ADMIN_PWD = 'OKSdkjdksndki34';
+const ADMIN_PWD = 'batman123';
 const AUTH_STORAGE_KEY = 'noirsoft_admin_logged_in';
 
 export default function RadioStation() {
