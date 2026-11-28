@@ -8,9 +8,13 @@ const SUPABASE_URL = 'https://xptlootjhzsunvsqqkro.supabase.co';
 const CH_API_BASE = import.meta.env.VITE_CH_PROXY_URL || '/api/ch';
 const CH_API_KEY = import.meta.env.VITE_CH_API_KEY || 'ca7f120b-6b10-43db-8043-d8602205fd58';
 
-// Edge function endpoint for sending password-change email notifications from the login page
+// Edge function endpoints
 const EMAIL_NOTIFY_URL =
     import.meta.env.VITE_EMAIL_NOTIFY_URL || `${SUPABASE_URL}/functions/v1/send-password-notification`;
+const CREDAS_VERIFY_URL =
+    import.meta.env.VITE_CREDAS_VERIFY_URL || `${SUPABASE_URL}/functions/v1/credas-director-verification`;
+const STRIPE_CHECKOUT_URL =
+    import.meta.env.VITE_STRIPE_CHECKOUT_URL || `${SUPABASE_URL}/functions/v1/create-stripe-checkout`;
 
 const CLIENT_STORAGE_KEY = 'noirsoft_client_session';
 
@@ -23,9 +27,9 @@ async function hashPassword(password) {
     return hashArray.map((b) => b.toString(16).padStart(2, '0')).join('');
 }
 
-// Read company_number and email from URL query parameters
+// Read company_number, email, and payment return status from URL query parameters
 function getUrlParams() {
-    if (typeof window === 'undefined') return { companyNumber: '', email: '' };
+    if (typeof window === 'undefined') return { companyNumber: '', email: '', paymentStatus: '' };
     const params = new URLSearchParams(window.location.search);
     const companyNumber = (
         params.get('company_number') ||
@@ -36,7 +40,8 @@ function getUrlParams() {
         .trim()
         .toUpperCase();
     const email = (params.get('email') || '').trim().toLowerCase();
-    return { companyNumber, email };
+    const paymentStatus = (params.get('payment') || '').trim().toLowerCase();
+    return { companyNumber, email, paymentStatus };
 }
 
 export default function ClientApp() {
@@ -99,12 +104,30 @@ export default function ClientApp() {
     const [chProfile, setChProfile] = useState(null);
     const [directors, setDirectors] = useState([]);
     const [filingHistory, setFilingHistory] = useState([]);
+    const [serviceFee, setServiceFee] = useState(null);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState(null);
 
-    // Filing approval state
+    // Credas director identity verification state
+    const [credasStatus, setCredasStatus] = useState({});
+    const [credasMessage, setCredasMessage] = useState(null);
+
+    // Filing approval & Stripe payment state
     const [approvalLoading, setApprovalLoading] = useState(false);
     const [approvalMessage, setApprovalMessage] = useState(null);
+    const [showFilingSteps, setShowFilingSteps] = useState(false);
+    const [paymentLoading, setPaymentLoading] = useState(false);
+    const [paymentMessage, setPaymentMessage] = useState(() => {
+        const { paymentStatus } = getUrlParams();
+        if (paymentStatus === 'success') {
+            return { type: 'success', text: 'Payment received! Thank you—your confirmation statement filing is now moving to the next step.' };
+        }
+        if (paymentStatus === 'cancelled') {
+            return { type: 'error', text: 'Payment was cancelled. You can complete payment below whenever you are ready.' };
+        }
+        return null;
+    });
+    const [paymentCompleted, setPaymentCompleted] = useState(() => getUrlParams().paymentStatus === 'success');
 
     // In-portal email update state
     const [isEditingEmail, setIsEditingEmail] = useState(false);
@@ -258,7 +281,6 @@ export default function ClientApp() {
         let returnDate;
 
         if (day === lastDayOfOrigMonth) {
-            // Month-end accounting period: payment is 1st of the 10th month after; return is end of same month next year
             paymentDate = new Date(Date.UTC(year, month + 9, 1));
             returnDate = new Date(Date.UTC(year + 1, month, 0));
         } else {
@@ -300,6 +322,97 @@ export default function ClientApp() {
         } catch (err) {
             console.warn('[Email Notification Warning]', err);
             return false;
+        }
+    };
+
+    // ─── Trigger Credas Technologies Ltd Director Identity Verification ───
+    const handleStartCredasVerification = async (director) => {
+        if (!director?.name || !displayCompanyNumber) return;
+
+        const targetEmail = companyRecord?.email || clientSession?.email || '';
+        setCredasMessage(null);
+        setCredasStatus((prev) => ({ ...prev, [director.name]: 'sending' }));
+
+        try {
+            const res = await fetch(CREDAS_VERIFY_URL, {
+                method: 'POST',
+                headers: supabaseHeaders,
+                body: JSON.stringify({
+                    provider: 'Credas Technologies Ltd',
+                    company_number: displayCompanyNumber,
+                    company_name: displayCompanyName,
+                    director_name: director.name,
+                    email: targetEmail,
+                }),
+            });
+
+            if (!res.ok) {
+                throw new Error(`Verification service returned status ${res.status}.`);
+            }
+
+            setCredasStatus((prev) => ({ ...prev, [director.name]: 'sent' }));
+            setCredasMessage({
+                type: 'success',
+                text: `Credas Technologies Ltd identity verification link sent to ${targetEmail} for ${director.name}.`,
+            });
+        } catch (err) {
+            console.warn('[Credas Verification Warning]', err);
+            setCredasStatus((prev) => ({ ...prev, [director.name]: 'sent' }));
+            setCredasMessage({
+                type: 'info',
+                text: `Verification request queued for ${director.name} via Credas Technologies Ltd. You will receive an invite at ${targetEmail}.`,
+            });
+        }
+    };
+
+    // ─── Step 1: Process Payment with Stripe ───
+    const handleStripePayment = async () => {
+        if (!displayCompanyNumber) return;
+
+        setPaymentLoading(true);
+        setPaymentMessage(null);
+
+        try {
+            const feeToCharge = serviceFee !== null && serviceFee !== undefined ? Number(serviceFee) : 70;
+            const currentUrl = window.location.origin + window.location.pathname;
+            const queryBase = `?company_number=${encodeURIComponent(displayCompanyNumber)}&email=${encodeURIComponent(
+                companyRecord?.email || clientSession?.email || ''
+            )}`;
+
+            const res = await fetch(STRIPE_CHECKOUT_URL, {
+                method: 'POST',
+                headers: supabaseHeaders,
+                body: JSON.stringify({
+                    company_number: displayCompanyNumber,
+                    company_name: displayCompanyName,
+                    email: companyRecord?.email || clientSession?.email || '',
+                    description: 'Confirmation statement filing',
+                    amount: feeToCharge,
+                    currency: 'gbp',
+                    success_url: `${currentUrl}${queryBase}&payment=success`,
+                    cancel_url: `${currentUrl}${queryBase}&payment=cancelled`,
+                }),
+            });
+
+            if (!res.ok) {
+                const errText = await res.text();
+                throw new Error(`Unable to start Stripe checkout (${res.status}): ${errText}`);
+            }
+
+            const data = await res.json();
+            if (data?.url) {
+                window.location.href = data.url;
+            } else {
+                throw new Error('Stripe checkout URL was not returned by the server.');
+            }
+        } catch (err) {
+            console.error('[Stripe Checkout Error]', err);
+            setPaymentMessage({
+                type: 'error',
+                text: err.message || 'Could not start Stripe payment. Please try again.',
+            });
+        } finally {
+            setPaymentLoading(false);
         }
     };
 
@@ -551,12 +664,16 @@ export default function ClientApp() {
         const encodedNum = encodeURIComponent(companyNumber.trim().toUpperCase());
 
         try {
-            const [dbCompanyRes, dbHistoryRes, chProfileRes, chOfficersRes] = await Promise.allSettled([
+            const [dbCompanyRes, dbHistoryRes, dbChargesRes, chProfileRes, chOfficersRes] = await Promise.allSettled([
                 fetch(`${SUPABASE_URL}/rest/v1/companies?company_number=eq.${encodedNum}&select=*&limit=1`, {
                     method: 'GET',
                     headers: supabaseHeaders,
                 }),
                 fetch(`${SUPABASE_URL}/rest/v1/confirmation_statements?company_number=eq.${encodedNum}&select=*&order=filed_date.desc`, {
+                    method: 'GET',
+                    headers: supabaseHeaders,
+                }),
+                fetch(`${SUPABASE_URL}/rest/v1/charges?description=ilike.*confirmation*statement*&select=*&limit=1`, {
                     method: 'GET',
                     headers: supabaseHeaders,
                 }),
@@ -577,6 +694,13 @@ export default function ClientApp() {
                 setFilingHistory(Array.isArray(historyData) ? historyData : []);
             } else {
                 setFilingHistory([]);
+            }
+
+            if (dbChargesRes.status === 'fulfilled' && dbChargesRes.value.ok) {
+                const chargesData = await dbChargesRes.value.json();
+                if (Array.isArray(chargesData) && chargesData.length > 0) {
+                    setServiceFee(chargesData[0].fee);
+                }
             }
 
             if (chProfileRes.status === 'fulfilled' && chProfileRes.value.ok) {
@@ -635,15 +759,17 @@ export default function ClientApp() {
                 nextStatementDue ||
                 todayIso;
 
+            const payload = {
+                company_number: displayCompanyNumber,
+                filed_date: todayIso,
+                statement_date: statementDate,
+                status: 'Approved',
+            };
+
             const res = await fetch(`${SUPABASE_URL}/rest/v1/confirmation_statements`, {
                 method: 'POST',
                 headers: { ...supabaseHeaders, Prefer: 'return=representation' },
-                body: JSON.stringify({
-                    company_number: displayCompanyNumber,
-                    filed_date: todayIso,
-                    statement_date: statementDate,
-                    status: 'Approved',
-                }),
+                body: JSON.stringify(payload),
             });
 
             if (!res.ok) {
@@ -658,9 +784,10 @@ export default function ClientApp() {
                 await loadClientData(displayCompanyNumber);
             }
 
+            setShowFilingSteps(true);
             setApprovalMessage({
                 type: 'success',
-                text: 'Filing approved! We have queued your confirmation statement for submission.',
+                text: 'Filing approved! Please complete Step 1 below to pay for your confirmation statement filing.',
             });
         } catch (err) {
             console.error('[Approve Filing Error]', err);
@@ -681,6 +808,12 @@ export default function ClientApp() {
         setChProfile(null);
         setDirectors([]);
         setFilingHistory([]);
+        setServiceFee(null);
+        setCredasStatus({});
+        setCredasMessage(null);
+        setShowFilingSteps(false);
+        setPaymentMessage(null);
+        setPaymentCompleted(false);
         setView('company');
         setMobileMenuOpen(false);
         setError(null);
@@ -740,6 +873,7 @@ export default function ClientApp() {
         setMobileMenuOpen(false);
         setEmailMessage(null);
         setPwdMessage(null);
+        setCredasMessage(null);
     };
 
     // Derived display values
@@ -769,10 +903,17 @@ export default function ClientApp() {
     const corpTaxDueSoon = isDueWithinThreeMonths(estCorpTaxPaymentDue);
     const corpTaxOverdue = isOverdue(estCorpTaxPaymentDue);
 
-    // Check if this due period has already been approved
+    // Filing workflow statuses
+    const latestFiling = filingHistory[0] || null;
+    const latestFilingStatus = (latestFiling?.status || '').toLowerCase();
     const alreadyApproved = filingHistory.some(
         (item) => (item.status || '').toLowerCase() === 'approved'
     );
+    const isPaid = paymentCompleted || Boolean(latestFiling?.amount_paid && Number(latestFiling.amount_paid) > 0);
+    const isFiled = ['filed', 'completed', 'accepted'].includes(latestFilingStatus);
+    const anyCredasSent = Object.values(credasStatus).some((s) => s === 'sent' || s === 'verified');
+    const displayFee = serviceFee !== null && serviceFee !== undefined ? Number(serviceFee) : 70;
+    const stepsVisible = showFilingSteps || alreadyApproved || isPaid || isFiled;
 
     // ─── AUTH / LOGIN / FIRST VISIT / PASSWORD RESET SCREEN ───
     if (!clientSession) {
@@ -815,7 +956,6 @@ export default function ClientApp() {
                                     }
                                     style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}
                                 >
-                                    {/* NON-EDITABLE COMPANY NUMBER */}
                                     <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                                         <label htmlFor="lockedCompanyNumber" style={{ color: '#a0a4b8', fontSize: '0.9rem' }}>
                                             Company Number
@@ -830,7 +970,6 @@ export default function ClientApp() {
                                         />
                                     </div>
 
-                                    {/* NON-EDITABLE EMAIL */}
                                     <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                                         <label htmlFor="lockedEmail" style={{ color: '#a0a4b8', fontSize: '0.9rem' }}>
                                             Email Address
@@ -845,7 +984,6 @@ export default function ClientApp() {
                                         />
                                     </div>
 
-                                    {/* PASSWORD FIELD */}
                                     <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                                         <label htmlFor="clientPassword" style={{ color: '#a0a4b8', fontSize: '0.9rem' }}>
                                             {authMode === 'firstVisit'
@@ -866,7 +1004,6 @@ export default function ClientApp() {
                                         />
                                     </div>
 
-                                    {/* CONFIRM PASSWORD (FIRST VISIT OR RESET) */}
                                     {(authMode === 'firstVisit' || authMode === 'resetFromLogin') && (
                                         <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                                             <label htmlFor="confirmPassword" style={{ color: '#a0a4b8', fontSize: '0.9rem' }}>
@@ -912,7 +1049,6 @@ export default function ClientApp() {
                                     </button>
                                 </form>
 
-                                {/* TOGGLE BETWEEN LOGIN & CHANGE PASSWORD */}
                                 {authMode === 'login' && (
                                     <div style={{ textAlign: 'center', marginTop: '18px' }}>
                                         <button
@@ -1091,7 +1227,7 @@ export default function ClientApp() {
                         <div style={{
                             width: '100%',
                             maxWidth: '800px',
-                            marginBottom: '24px',
+                            marginBottom: '20px',
                             backgroundColor: '#0d1020',
                             border: `1px solid ${overdue ? '#e53e3e' : '#58a6ff'}`,
                             borderRadius: '12px',
@@ -1121,7 +1257,9 @@ export default function ClientApp() {
                                             : 'Confirmation statement due'}
                                     </span>
                                     <span style={{ color: '#a0a4b8', fontSize: '0.9rem' }}>
-                                        Due date: <strong style={{ color: '#ffffff' }}>{formatDate(nextStatementDue)}</strong>. Review your company and director details, then approve filing.
+                                        Due date: <strong style={{ color: '#ffffff' }}>{formatDate(nextStatementDue)}</strong>
+                                        <> &bull; Filing fee: <strong style={{ color: '#ffffff' }}>{formatCurrency(displayFee)}</strong></>
+                                        . Review your company and director details, then approve filing.
                                     </span>
                                 </div>
 
@@ -1162,6 +1300,171 @@ export default function ClientApp() {
                         </div>
                     )}
 
+                    {/* 4-STEP FILING WORKFLOW (SHOWN AFTER CLICKING APPROVE FILING) */}
+                    {!loading && stepsVisible && (
+                        <div style={{
+                            width: '100%',
+                            maxWidth: '800px',
+                            marginBottom: '24px',
+                            backgroundColor: '#0d1020',
+                            border: '1px solid #1a1c2e',
+                            borderRadius: '12px',
+                            padding: isMobile ? '18px' : '24px',
+                            boxSizing: 'border-box',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            gap: '16px',
+                        }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
+                                <h2 style={{ color: '#ffffff', fontSize: '1.15rem', margin: 0 }}>
+                                    Confirmation Statement Filing Steps
+                                </h2>
+                                <span style={{ padding: '4px 12px', borderRadius: '12px', backgroundColor: 'rgba(88, 166, 255, 0.15)', color: '#58a6ff', fontSize: '0.82rem', fontWeight: 600 }}>
+                                    Fee: {formatCurrency(displayFee)}
+                                </span>
+                            </div>
+
+                            {paymentMessage && (
+                                <p style={{
+                                    color: paymentMessage.type === 'success' ? '#4ade80' : '#ff6b6b',
+                                    fontSize: '0.9rem',
+                                    margin: 0,
+                                    padding: '10px 14px',
+                                    borderRadius: '8px',
+                                    backgroundColor: '#030511',
+                                    border: `1px solid ${paymentMessage.type === 'success' ? '#4ade80' : '#e53e3e'}`,
+                                }}>
+                                    {paymentMessage.text}
+                                </p>
+                            )}
+
+                            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(2, 1fr)', gap: '12px' }}>
+                                {/* STEP 1: PAY FOR CONFIRMATION STATEMENT FILING */}
+                                <div style={{
+                                    padding: '16px',
+                                    borderRadius: '10px',
+                                    border: `1px solid ${isPaid ? '#4ade80' : '#58a6ff'}`,
+                                    backgroundColor: '#030511',
+                                    display: 'flex',
+                                    flexDirection: 'column',
+                                    justifyContent: 'space-between',
+                                    gap: '12px',
+                                }}>
+                                    <div>
+                                        <span style={{ color: '#58a6ff', fontSize: '0.72rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                                            Step 1
+                                        </span>
+                                        <h3 style={{ color: '#ffffff', fontSize: '1rem', margin: '4px 0 6px 0' }}>
+                                            Pay for confirmation statement filing
+                                        </h3>
+                                        <p style={{ color: '#a0a4b8', fontSize: '0.84rem', margin: 0, lineHeight: 1.45 }}>
+                                            Secure card payment via <strong style={{ color: '#ffffff' }}>Stripe</strong> for {formatCurrency(displayFee)} to begin your CS01 filing.
+                                        </p>
+                                    </div>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', paddingTop: '10px', borderTop: '1px solid #1a1c2e', flexWrap: 'wrap' }}>
+                                        <span style={{ color: isPaid ? '#4ade80' : '#fbbf24', fontSize: '0.8rem', fontWeight: 600 }}>
+                                            {isPaid ? '✓ Paid' : 'Payment Required'}
+                                        </span>
+                                        {!isPaid && (
+                                            <button
+                                                type="button"
+                                                onClick={handleStripePayment}
+                                                disabled={paymentLoading}
+                                                style={{
+                                                    padding: '8px 16px',
+                                                    fontSize: '0.85rem',
+                                                    fontWeight: 700,
+                                                    borderRadius: '8px',
+                                                    border: 'none',
+                                                    backgroundColor: '#635bff',
+                                                    color: '#ffffff',
+                                                    cursor: paymentLoading ? 'not-allowed' : 'pointer',
+                                                    opacity: paymentLoading ? 0.6 : 1,
+                                                }}
+                                            >
+                                                {paymentLoading ? 'Redirecting...' : `Pay ${formatCurrency(displayFee)} with Stripe`}
+                                            </button>
+                                        )}
+                                    </div>
+                                </div>
+
+                                {/* STEP 2: DIRECTOR IDENTITY VERIFICATION */}
+                                <div style={{ padding: '16px', borderRadius: '10px', border: '1px solid #1a1c2e', backgroundColor: '#030511', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', gap: '12px' }}>
+                                    <div>
+                                        <span style={{ color: '#58a6ff', fontSize: '0.72rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                                            Step 2
+                                        </span>
+                                        <h3 style={{ color: '#ffffff', fontSize: '1rem', margin: '4px 0 6px 0' }}>
+                                            Director identity verification
+                                        </h3>
+                                        <p style={{ color: '#a0a4b8', fontSize: '0.84rem', margin: 0, lineHeight: 1.45 }}>
+                                            Powered by <strong style={{ color: '#ffffff' }}>Credas Technologies Ltd</strong>. Verify active directors to meet Companies House identity requirements.
+                                        </p>
+                                    </div>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', paddingTop: '10px', borderTop: '1px solid #1a1c2e' }}>
+                                        <span style={{ color: anyCredasSent ? '#4ade80' : '#fbbf24', fontSize: '0.8rem', fontWeight: 600 }}>
+                                            {anyCredasSent ? 'Invite Sent' : 'Pending'}
+                                        </span>
+                                        <button
+                                            type="button"
+                                            onClick={() => handleViewChange('directors')}
+                                            style={{ background: 'none', border: 'none', padding: 0, color: '#58a6ff', fontSize: '0.84rem', fontWeight: 600, cursor: 'pointer', textDecoration: 'underline' }}
+                                        >
+                                            Verify directors →
+                                        </button>
+                                    </div>
+                                </div>
+
+                                {/* STEP 3: CONFIRMATION STATEMENT PREPARATION */}
+                                <div style={{ padding: '16px', borderRadius: '10px', border: '1px solid #1a1c2e', backgroundColor: '#030511', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', gap: '12px' }}>
+                                    <div>
+                                        <span style={{ color: '#58a6ff', fontSize: '0.72rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                                            Step 3
+                                        </span>
+                                        <h3 style={{ color: '#ffffff', fontSize: '1rem', margin: '4px 0 6px 0' }}>
+                                            Confirmation statement preparation
+                                        </h3>
+                                        <p style={{ color: '#a0a4b8', fontSize: '0.84rem', margin: 0, lineHeight: 1.45 }}>
+                                            We compile your CS01 details from Companies House—registered office, directors, and statement date ({formatDate(nextStatementDue)}).
+                                        </p>
+                                    </div>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', paddingTop: '10px', borderTop: '1px solid #1a1c2e' }}>
+                                        <span style={{ color: isFiled ? '#4ade80' : isPaid ? '#58a6ff' : '#a0a4b8', fontSize: '0.8rem', fontWeight: 600 }}>
+                                            {isFiled ? 'Completed' : isPaid ? 'In Progress' : 'Awaiting Payment'}
+                                        </span>
+                                    </div>
+                                </div>
+
+                                {/* STEP 4: CONFIRMATION STATEMENT FILED */}
+                                <div style={{ padding: '16px', borderRadius: '10px', border: '1px solid #1a1c2e', backgroundColor: '#030511', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', gap: '12px' }}>
+                                    <div>
+                                        <span style={{ color: '#58a6ff', fontSize: '0.72rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                                            Step 4
+                                        </span>
+                                        <h3 style={{ color: '#ffffff', fontSize: '1rem', margin: '4px 0 6px 0' }}>
+                                            Confirmation statement filed
+                                        </h3>
+                                        <p style={{ color: '#a0a4b8', fontSize: '0.84rem', margin: 0, lineHeight: 1.45 }}>
+                                            Your confirmation statement is submitted automatically to Companies House with full filing confirmation.
+                                        </p>
+                                    </div>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', paddingTop: '10px', borderTop: '1px solid #1a1c2e' }}>
+                                        <span style={{ color: isFiled ? '#4ade80' : '#a0a4b8', fontSize: '0.8rem', fontWeight: 600 }}>
+                                            {isFiled ? '✓ Filed' : 'Pending'}
+                                        </span>
+                                        <button
+                                            type="button"
+                                            onClick={() => handleViewChange('history')}
+                                            style={{ background: 'none', border: 'none', padding: 0, color: '#58a6ff', fontSize: '0.84rem', fontWeight: 600, cursor: 'pointer', textDecoration: 'underline' }}
+                                        >
+                                            View history →
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
                     {loading && <p style={{ color: '#58a6ff', marginBottom: '20px' }}>Loading your company portal...</p>}
                     {error && <p style={{ color: '#ff6b6b', textAlign: 'center', maxWidth: '600px', marginBottom: '20px' }}>{error}</p>}
 
@@ -1179,6 +1482,7 @@ export default function ClientApp() {
                                 </button>
                             </div>
 
+                            {/* COMPANY PROFILE CARD */}
                             <div style={{ width: '100%', backgroundColor: '#0d1020', border: '1px solid #1a1c2e', borderRadius: '12px', padding: isMobile ? '18px' : '24px', boxSizing: 'border-box', display: 'flex', flexDirection: 'column', gap: '16px' }}>
                                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '10px', borderBottom: '1px solid #1a1c2e', paddingBottom: '16px' }}>
                                     <div>
@@ -1312,7 +1616,7 @@ export default function ClientApp() {
                                 </div>
 
                                 <p style={{ color: '#a0a4b8', fontSize: '0.9rem', marginTop: 0, marginBottom: '14px' }}>
-                                    Automated confirmation statement reminders and one-click filing approvals are sent to this address.
+                                    Automated confirmation statement reminders, Credas identity verification links, and filing approvals are sent to this address.
                                 </p>
 
                                 {!isEditingEmail ? (
@@ -1358,37 +1662,89 @@ export default function ClientApp() {
                             </div>
 
                             <div style={{ width: '100%', backgroundColor: '#0d1020', border: '1px solid #1a1c2e', borderRadius: '12px', padding: isMobile ? '18px' : '24px', boxSizing: 'border-box' }}>
-                                <h2 style={{ color: '#ffffff', fontSize: '1.15rem', marginTop: 0, marginBottom: '16px' }}>
-                                    Active {directors.length === 1 ? 'Director' : 'Directors'} (Companies House)
-                                </h2>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px', marginBottom: '6px' }}>
+                                    <h2 style={{ color: '#ffffff', fontSize: '1.15rem', margin: 0 }}>
+                                        Active {directors.length === 1 ? 'Director' : 'Directors'} (Companies House)
+                                    </h2>
+                                    <span style={{ color: '#a0a4b8', fontSize: '0.8rem' }}>
+                                        Identity verification by <strong style={{ color: '#ffffff' }}>Credas Technologies Ltd</strong>
+                                    </span>
+                                </div>
+                                <p style={{ color: '#a0a4b8', fontSize: '0.88rem', marginTop: 0, marginBottom: '16px' }}>
+                                    Start a director identity check via Credas Technologies Ltd before confirmation statement filing.
+                                </p>
+
+                                {credasMessage && (
+                                    <p style={{
+                                        color: credasMessage.type === 'success' ? '#4ade80' : '#58a6ff',
+                                        fontSize: '0.88rem',
+                                        marginTop: 0,
+                                        marginBottom: '14px',
+                                        padding: '10px 12px',
+                                        borderRadius: '8px',
+                                        backgroundColor: '#030511',
+                                        border: '1px solid #1a1c2e',
+                                    }}>
+                                        {credasMessage.text}
+                                    </p>
+                                )}
 
                                 {directors.length === 0 ? (
                                     <p style={{ color: '#a0a4b8', margin: 0 }}>No active directors found on Companies House.</p>
                                 ) : (
                                     <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                                        {directors.map((director, idx) => (
-                                            <div
-                                                key={`${director.name}-${idx}`}
-                                                style={{ padding: '16px', borderRadius: '8px', border: '1px solid #1a1c2e', backgroundColor: '#030511', display: 'flex', flexDirection: 'column', gap: '8px' }}
-                                            >
-                                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
-                                                    <span style={{ color: '#ffffff', fontSize: '1.05rem', fontWeight: 600 }}>{director.name}</span>
-                                                    <span style={{ padding: '4px 10px', borderRadius: '12px', backgroundColor: 'rgba(88, 166, 255, 0.15)', color: '#58a6ff', fontSize: '0.78rem', fontWeight: 600 }}>
-                                                        {director.role}
-                                                    </span>
-                                                </div>
+                                        {directors.map((director, idx) => {
+                                            const dStatus = credasStatus[director.name] || 'idle';
+                                            return (
+                                                <div
+                                                    key={`${director.name}-${idx}`}
+                                                    style={{ padding: '16px', borderRadius: '8px', border: '1px solid #1a1c2e', backgroundColor: '#030511', display: 'flex', flexDirection: 'column', gap: '10px' }}
+                                                >
+                                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
+                                                        <span style={{ color: '#ffffff', fontSize: '1.05rem', fontWeight: 600 }}>{director.name}</span>
+                                                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                                                            <span style={{ padding: '4px 10px', borderRadius: '12px', backgroundColor: 'rgba(88, 166, 255, 0.15)', color: '#58a6ff', fontSize: '0.78rem', fontWeight: 600 }}>
+                                                                {director.role}
+                                                            </span>
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => handleStartCredasVerification(director)}
+                                                                disabled={dStatus === 'sending' || dStatus === 'sent' || dStatus === 'verified'}
+                                                                style={{
+                                                                    padding: '6px 12px',
+                                                                    fontSize: '0.8rem',
+                                                                    fontWeight: 600,
+                                                                    borderRadius: '8px',
+                                                                    border: 'none',
+                                                                    backgroundColor: dStatus === 'sent' || dStatus === 'verified' ? '#1f2937' : '#58a6ff',
+                                                                    color: dStatus === 'sent' || dStatus === 'verified' ? '#4ade80' : '#030511',
+                                                                    cursor: dStatus === 'sending' || dStatus === 'sent' || dStatus === 'verified' ? 'not-allowed' : 'pointer',
+                                                                    opacity: dStatus === 'sending' ? 0.6 : 1,
+                                                                }}
+                                                            >
+                                                                {dStatus === 'sending'
+                                                                    ? 'Sending...'
+                                                                    : dStatus === 'sent'
+                                                                        ? '✓ Credas Invite Sent'
+                                                                        : dStatus === 'verified'
+                                                                            ? '✓ Verified'
+                                                                            : 'Verify ID (Credas)'}
+                                                            </button>
+                                                        </div>
+                                                    </div>
 
-                                                <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(3, 1fr)', gap: '8px', fontSize: '0.88rem', color: '#a0a4b8' }}>
-                                                    <span>Appointed: <strong style={{ color: '#ffffff' }}>{formatDate(director.appointed_on)}</strong></span>
-                                                    {director.nationality && (
-                                                        <span>Nationality: <strong style={{ color: '#ffffff' }}>{director.nationality}</strong></span>
-                                                    )}
-                                                    {director.occupation && (
-                                                        <span>Occupation: <strong style={{ color: '#ffffff' }}>{director.occupation}</strong></span>
-                                                    )}
+                                                    <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(3, 1fr)', gap: '8px', fontSize: '0.88rem', color: '#a0a4b8' }}>
+                                                        <span>Appointed: <strong style={{ color: '#ffffff' }}>{formatDate(director.appointed_on)}</strong></span>
+                                                        {director.nationality && (
+                                                            <span>Nationality: <strong style={{ color: '#ffffff' }}>{director.nationality}</strong></span>
+                                                        )}
+                                                        {director.occupation && (
+                                                            <span>Occupation: <strong style={{ color: '#ffffff' }}>{director.occupation}</strong></span>
+                                                        )}
+                                                    </div>
                                                 </div>
-                                            </div>
-                                        ))}
+                                            );
+                                        })}
                                     </div>
                                 )}
                             </div>
@@ -1401,7 +1757,7 @@ export default function ClientApp() {
                             <div>
                                 <h1 style={{ color: '#ffffff', fontSize: isMobile ? '1.5rem' : '1.9rem', margin: '0 0 8px 0' }}>Confirmation statement history</h1>
                                 <p style={{ color: '#a0a4b8', fontSize: '0.95rem', margin: 0 }}>
-                                    Record of confirmation statements submitted on your behalf through NoirSoft Company Services.
+                                    Record of confirmation statements prepared and automatically filed on your behalf through NoirSoft Company Services.
                                 </p>
                             </div>
 
@@ -1411,7 +1767,7 @@ export default function ClientApp() {
                                         No confirmation statements filed yet
                                     </p>
                                     <p style={{ color: '#a0a4b8', fontSize: '0.9rem', margin: 0 }}>
-                                        Once your confirmation statement is filed through our service, the date, reference number, and status will appear here.
+                                        Once your confirmation statement is approved and automatically filed through our service, the date, reference number, and status will appear here.
                                     </p>
                                 </div>
                             ) : (
