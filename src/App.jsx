@@ -40,14 +40,14 @@ export default function RadioStation() {
     const [password, setPassword] = useState('');
     const [authError, setAuthError] = useState(null);
 
-    // Financial stats state (from baltrx table)
-    const [balTrx, setBalTrx] = useState({
+    // Financial stats state (calculated live from `transactions` table)
+    const [stats, setStats] = useState({
         total_taken: 0,
         total_transactions: 0,
         total_cost: 0,
         total_profit: 0,
     });
-    const [balTrxLoading, setBalTrxLoading] = useState(false);
+    const [statsLoading, setStatsLoading] = useState(false);
 
     // Search state
     const [query, setQuery] = useState('');
@@ -56,56 +56,92 @@ export default function RadioStation() {
     const [company, setCompany] = useState(null);
     const [hasSearched, setHasSearched] = useState(false);
 
-    // Views: 'search' | 'companies' | 'dueSoon'
+    // Views: 'search' | 'companies' | 'dueSoon' | 'charges' | 'costs'
     const [view, setView] = useState('search');
     const [selectedCompany, setSelectedCompany] = useState(null);
 
-    // Supabase state
+    // Supabase companies state
     const [supabaseCompanies, setSupabaseCompanies] = useState([]);
     const [page, setPage] = useState(1);
     const [totalCount, setTotalCount] = useState(0);
     const itemsPerPage = 100;
 
-    // ─── Fetch financial stats from baltrx ───
-    const fetchBalTrx = async () => {
-        setBalTrxLoading(true);
+    // Manage Charges state (from `charges` table)
+    const [charges, setCharges] = useState([]);
+    const [chargesLoading, setChargesLoading] = useState(false);
+    const [chargesError, setChargesError] = useState(null);
+    const [chargesSuccess, setChargesSuccess] = useState(null);
+    const [newChargeDesc, setNewChargeDesc] = useState('');
+    const [newChargeFee, setNewChargeFee] = useState('');
+    const [chargeSaving, setChargeSaving] = useState(false);
+    const [editingChargeId, setEditingChargeId] = useState(null);
+    const [editChargeDesc, setEditChargeDesc] = useState('');
+    const [editChargeFee, setEditChargeFee] = useState('');
+
+    // Manage Costs state (from `cost` table)
+    const [costs, setCosts] = useState([]);
+    const [costsLoading, setCostsLoading] = useState(false);
+    const [costsError, setCostsError] = useState(null);
+    const [costsSuccess, setCostsSuccess] = useState(null);
+    const [newCostDesc, setNewCostDesc] = useState('');
+    const [newCostCharge, setNewCostCharge] = useState('');
+    const [costSaving, setCostSaving] = useState(false);
+    const [editingCostId, setEditingCostId] = useState(null);
+    const [editCostDesc, setEditCostDesc] = useState('');
+    const [editCostCharge, setEditCostCharge] = useState('');
+
+    const supabaseHeaders = {
+        apikey: SUPABASE_ANON_KEY,
+        Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+        'Content-Type': 'application/json',
+    };
+
+    // ─── Calculate financial stats directly from `transactions` table ───
+    const fetchTransactionStats = async () => {
+        setStatsLoading(true);
         try {
             const res = await fetch(
-                `${SUPABASE_URL}/rest/v1/baltrx?select=total_taken,total_transactions,total_cost,total_profit&order=id.desc&limit=1`,
+                `${SUPABASE_URL}/rest/v1/transactions?select=total_charged,cost`,
                 {
                     method: 'GET',
-                    headers: {
-                        'apikey': SUPABASE_ANON_KEY,
-                        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
-                        'Content-Type': 'application/json',
-                    },
+                    headers: supabaseHeaders,
                 }
             );
 
             if (!res.ok) {
                 const errorText = await res.text();
-                throw new Error(`baltrx Error (${res.status}): ${errorText}`);
+                throw new Error(`transactions Error (${res.status}): ${errorText}`);
             }
 
             const data = await res.json();
-            if (Array.isArray(data) && data.length > 0) {
-                setBalTrx({
-                    total_taken: Number(data[0].total_taken ?? 0),
-                    total_transactions: Number(data[0].total_transactions ?? 0),
-                    total_cost: Number(data[0].total_cost ?? 0),
-                    total_profit: Number(data[0].total_profit ?? 0),
-                });
-            }
+            const rows = Array.isArray(data) ? data : [];
+
+            const totals = rows.reduce(
+                (acc, row) => {
+                    acc.total_taken += Number(row.total_charged ?? 0);
+                    acc.total_cost += Number(row.cost ?? 0);
+                    acc.total_transactions += 1;
+                    return acc;
+                },
+                { total_taken: 0, total_cost: 0, total_transactions: 0 }
+            );
+
+            setStats({
+                total_taken: totals.total_taken,
+                total_transactions: totals.total_transactions,
+                total_cost: totals.total_cost,
+                total_profit: totals.total_taken - totals.total_cost,
+            });
         } catch (err) {
-            console.error('[baltrx fetch error]', err);
+            console.error('[transactions stats fetch error]', err);
         } finally {
-            setBalTrxLoading(false);
+            setStatsLoading(false);
         }
     };
 
     useEffect(() => {
         if (isAuthenticated) {
-            fetchBalTrx();
+            fetchTransactionStats();
         }
     }, [isAuthenticated]);
 
@@ -135,6 +171,14 @@ export default function RadioStation() {
         setHasSearched(false);
         setError(null);
         setSupabaseCompanies([]);
+        setCharges([]);
+        setChargesError(null);
+        setChargesSuccess(null);
+        setEditingChargeId(null);
+        setCosts([]);
+        setCostsError(null);
+        setCostsSuccess(null);
+        setEditingCostId(null);
     };
 
     // ─── Fetch companies from Supabase (Direct API Call) ───
@@ -148,11 +192,9 @@ export default function RadioStation() {
             const res = await fetch(`${SUPABASE_URL}/rest/v1/companies?select=*&order=id.desc&limit=${itemsPerPage}&offset=${offset}`, {
                 method: 'GET',
                 headers: {
-                    'apikey': SUPABASE_ANON_KEY,
-                    'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
-                    'Content-Type': 'application/json',
-                    'Prefer': 'count=exact' // Request total count for pagination
-                }
+                    ...supabaseHeaders,
+                    Prefer: 'count=exact',
+                },
             });
 
             if (!res.ok) {
@@ -160,7 +202,6 @@ export default function RadioStation() {
                 throw new Error(`Supabase Error (${res.status}): ${errorText}`);
             }
 
-            // Extract total count from headers (format is usually "0-99/1234")
             const contentRange = res.headers.get('content-range');
             if (contentRange) {
                 const total = parseInt(contentRange.split('/')[1], 10);
@@ -175,6 +216,326 @@ export default function RadioStation() {
             setError('Failed to load database records: ' + err.message);
         } finally {
             setLoading(false);
+        }
+    };
+
+    // ─── Manage Charges CRUD (Supabase `charges` table) ───
+    const fetchCharges = async () => {
+        setChargesLoading(true);
+        setChargesError(null);
+
+        try {
+            const res = await fetch(`${SUPABASE_URL}/rest/v1/charges?select=*&order=id.asc`, {
+                method: 'GET',
+                headers: supabaseHeaders,
+            });
+
+            if (!res.ok) {
+                const errText = await res.text();
+                throw new Error(`Could not load charges (${res.status}): ${errText}`);
+            }
+
+            const data = await res.json();
+            setCharges(Array.isArray(data) ? data : []);
+        } catch (err) {
+            console.error('[Charges fetch error]', err);
+            setChargesError(err.message || 'Failed to load charges.');
+        } finally {
+            setChargesLoading(false);
+        }
+    };
+
+    const handleAddCharge = async (e) => {
+        e.preventDefault();
+        setChargesError(null);
+        setChargesSuccess(null);
+
+        const desc = newChargeDesc.trim();
+        const feeNum = parseFloat(newChargeFee);
+
+        if (!desc) {
+            setChargesError('Please enter a charge description.');
+            return;
+        }
+        if (isNaN(feeNum) || feeNum < 0) {
+            setChargesError('Please enter a valid non-negative fee.');
+            return;
+        }
+
+        setChargeSaving(true);
+        try {
+            const res = await fetch(`${SUPABASE_URL}/rest/v1/charges`, {
+                method: 'POST',
+                headers: { ...supabaseHeaders, Prefer: 'return=representation' },
+                body: JSON.stringify({ description: desc, fee: feeNum }),
+            });
+
+            if (!res.ok) {
+                const errText = await res.text();
+                throw new Error(`Could not add charge (${res.status}): ${errText}`);
+            }
+
+            const inserted = await res.json();
+            if (Array.isArray(inserted) && inserted.length > 0) {
+                setCharges((prev) => [...prev, inserted[0]]);
+            } else {
+                await fetchCharges();
+            }
+
+            setNewChargeDesc('');
+            setNewChargeFee('');
+            setChargesSuccess('Charge added successfully.');
+        } catch (err) {
+            console.error('[Add charge error]', err);
+            setChargesError(err.message || 'Failed to add charge.');
+        } finally {
+            setChargeSaving(false);
+        }
+    };
+
+    const handleStartEditCharge = (item) => {
+        setEditingChargeId(item.id);
+        setEditChargeDesc(item.description || '');
+        setEditChargeFee(item.fee !== null && item.fee !== undefined ? String(item.fee) : '');
+        setChargesError(null);
+        setChargesSuccess(null);
+    };
+
+    const handleCancelEditCharge = () => {
+        setEditingChargeId(null);
+        setEditChargeDesc('');
+        setEditChargeFee('');
+    };
+
+    const handleSaveEditCharge = async (id) => {
+        setChargesError(null);
+        setChargesSuccess(null);
+
+        const desc = editChargeDesc.trim();
+        const feeNum = parseFloat(editChargeFee);
+
+        if (!desc) {
+            setChargesError('Description cannot be empty.');
+            return;
+        }
+        if (isNaN(feeNum) || feeNum < 0) {
+            setChargesError('Please enter a valid non-negative fee.');
+            return;
+        }
+
+        setChargeSaving(true);
+        try {
+            const res = await fetch(`${SUPABASE_URL}/rest/v1/charges?id=eq.${id}`, {
+                method: 'PATCH',
+                headers: { ...supabaseHeaders, Prefer: 'return=representation' },
+                body: JSON.stringify({ description: desc, fee: feeNum }),
+            });
+
+            if (!res.ok) {
+                const errText = await res.text();
+                throw new Error(`Could not update charge (${res.status}): ${errText}`);
+            }
+
+            const updated = await res.json();
+            const updatedRow = Array.isArray(updated) && updated.length > 0 ? updated[0] : { id, description: desc, fee: feeNum };
+
+            setCharges((prev) => prev.map((c) => (c.id === id ? { ...c, ...updatedRow } : c)));
+            setEditingChargeId(null);
+            setChargesSuccess('Charge updated.');
+        } catch (err) {
+            console.error('[Update charge error]', err);
+            setChargesError(err.message || 'Failed to update charge.');
+        } finally {
+            setChargeSaving(false);
+        }
+    };
+
+    const handleDeleteCharge = async (id) => {
+        setChargesError(null);
+        setChargesSuccess(null);
+        setChargeSaving(true);
+
+        try {
+            const res = await fetch(`${SUPABASE_URL}/rest/v1/charges?id=eq.${id}`, {
+                method: 'DELETE',
+                headers: supabaseHeaders,
+            });
+
+            if (!res.ok) {
+                const errText = await res.text();
+                throw new Error(`Could not delete charge (${res.status}): ${errText}`);
+            }
+
+            setCharges((prev) => prev.filter((c) => c.id !== id));
+            if (editingChargeId === id) {
+                setEditingChargeId(null);
+            }
+            setChargesSuccess('Charge deleted.');
+        } catch (err) {
+            console.error('[Delete charge error]', err);
+            setChargesError(err.message || 'Failed to delete charge.');
+        } finally {
+            setChargeSaving(false);
+        }
+    };
+
+    // ─── Manage Costs CRUD (Supabase `cost` table) ───
+    const fetchCosts = async () => {
+        setCostsLoading(true);
+        setCostsError(null);
+
+        try {
+            const res = await fetch(`${SUPABASE_URL}/rest/v1/cost?select=*&order=id.asc`, {
+                method: 'GET',
+                headers: supabaseHeaders,
+            });
+
+            if (!res.ok) {
+                const errText = await res.text();
+                throw new Error(`Could not load costs (${res.status}): ${errText}`);
+            }
+
+            const data = await res.json();
+            setCosts(Array.isArray(data) ? data : []);
+        } catch (err) {
+            console.error('[Costs fetch error]', err);
+            setCostsError(err.message || 'Failed to load costs.');
+        } finally {
+            setCostsLoading(false);
+        }
+    };
+
+    const handleAddCost = async (e) => {
+        e.preventDefault();
+        setCostsError(null);
+        setCostsSuccess(null);
+
+        const desc = newCostDesc.trim();
+        const chargeNum = parseFloat(newCostCharge);
+
+        if (!desc) {
+            setCostsError('Please enter a cost description.');
+            return;
+        }
+        if (isNaN(chargeNum) || chargeNum < 0) {
+            setCostsError('Please enter a valid non-negative cost.');
+            return;
+        }
+
+        setCostSaving(true);
+        try {
+            const res = await fetch(`${SUPABASE_URL}/rest/v1/cost`, {
+                method: 'POST',
+                headers: { ...supabaseHeaders, Prefer: 'return=representation' },
+                body: JSON.stringify({ description: desc, charge: chargeNum }),
+            });
+
+            if (!res.ok) {
+                const errText = await res.text();
+                throw new Error(`Could not add cost (${res.status}): ${errText}`);
+            }
+
+            const inserted = await res.json();
+            if (Array.isArray(inserted) && inserted.length > 0) {
+                setCosts((prev) => [...prev, inserted[0]]);
+            } else {
+                await fetchCosts();
+            }
+
+            setNewCostDesc('');
+            setNewCostCharge('');
+            setCostsSuccess('Cost added successfully.');
+        } catch (err) {
+            console.error('[Add cost error]', err);
+            setCostsError(err.message || 'Failed to add cost.');
+        } finally {
+            setCostSaving(false);
+        }
+    };
+
+    const handleStartEditCost = (item) => {
+        setEditingCostId(item.id);
+        setEditCostDesc(item.description || '');
+        setEditCostCharge(item.charge !== null && item.charge !== undefined ? String(item.charge) : '');
+        setCostsError(null);
+        setCostsSuccess(null);
+    };
+
+    const handleCancelEditCost = () => {
+        setEditingCostId(null);
+        setEditCostDesc('');
+        setEditCostCharge('');
+    };
+
+    const handleSaveEditCost = async (id) => {
+        setCostsError(null);
+        setCostsSuccess(null);
+
+        const desc = editCostDesc.trim();
+        const chargeNum = parseFloat(editCostCharge);
+
+        if (!desc) {
+            setCostsError('Description cannot be empty.');
+            return;
+        }
+        if (isNaN(chargeNum) || chargeNum < 0) {
+            setCostsError('Please enter a valid non-negative cost.');
+            return;
+        }
+
+        setCostSaving(true);
+        try {
+            const res = await fetch(`${SUPABASE_URL}/rest/v1/cost?id=eq.${id}`, {
+                method: 'PATCH',
+                headers: { ...supabaseHeaders, Prefer: 'return=representation' },
+                body: JSON.stringify({ description: desc, charge: chargeNum }),
+            });
+
+            if (!res.ok) {
+                const errText = await res.text();
+                throw new Error(`Could not update cost (${res.status}): ${errText}`);
+            }
+
+            const updated = await res.json();
+            const updatedRow = Array.isArray(updated) && updated.length > 0 ? updated[0] : { id, description: desc, charge: chargeNum };
+
+            setCosts((prev) => prev.map((c) => (c.id === id ? { ...c, ...updatedRow } : c)));
+            setEditingCostId(null);
+            setCostsSuccess('Cost updated.');
+        } catch (err) {
+            console.error('[Update cost error]', err);
+            setCostsError(err.message || 'Failed to update cost.');
+        } finally {
+            setCostSaving(false);
+        }
+    };
+
+    const handleDeleteCost = async (id) => {
+        setCostsError(null);
+        setCostsSuccess(null);
+        setCostSaving(true);
+
+        try {
+            const res = await fetch(`${SUPABASE_URL}/rest/v1/cost?id=eq.${id}`, {
+                method: 'DELETE',
+                headers: supabaseHeaders,
+            });
+
+            if (!res.ok) {
+                const errText = await res.text();
+                throw new Error(`Could not delete cost (${res.status}): ${errText}`);
+            }
+
+            setCosts((prev) => prev.filter((c) => c.id !== id));
+            if (editingCostId === id) {
+                setEditingCostId(null);
+            }
+            setCostsSuccess('Cost deleted.');
+        } catch (err) {
+            console.error('[Delete cost error]', err);
+            setCostsError(err.message || 'Failed to delete cost.');
+        } finally {
+            setCostSaving(false);
         }
     };
 
@@ -243,7 +604,6 @@ export default function RadioStation() {
             let confirmationStatement = null;
             let directors = [];
 
-            // Fetch full company profile and officers in parallel
             if (raw.company_number) {
                 const companyNum = encodeURIComponent(raw.company_number);
                 const [profileResult, officersResult] = await Promise.allSettled([
@@ -301,7 +661,7 @@ export default function RadioStation() {
         return new Intl.NumberFormat('en-GB', {
             style: 'currency',
             currency: 'GBP',
-        }).format(amount);
+        }).format(Number(amount || 0));
     };
 
     const formatDate = (dateString) => {
@@ -331,9 +691,19 @@ export default function RadioStation() {
         setHasSearched(false);
         setPage(1);
         setMobileMenuOpen(false);
+        setChargesError(null);
+        setChargesSuccess(null);
+        setEditingChargeId(null);
+        setCostsError(null);
+        setCostsSuccess(null);
+        setEditingCostId(null);
 
         if (newView === 'companies' || newView === 'dueSoon') {
             fetchSupabaseCompanies(1);
+        } else if (newView === 'charges') {
+            fetchCharges();
+        } else if (newView === 'costs') {
+            fetchCosts();
         }
     };
 
@@ -430,6 +800,12 @@ export default function RadioStation() {
                             <button onClick={() => handleViewChange('companies')} style={{ background: 'none', border: 'none', padding: '6px 0', textAlign: 'left', color: view === 'companies' ? '#ffffff' : '#58a6ff', fontSize: '1.05rem', cursor: 'pointer', fontWeight: view === 'companies' ? 600 : 400 }}>List of companies</button>
                             <button onClick={() => handleViewChange('dueSoon')} style={{ background: 'none', border: 'none', padding: '6px 0', textAlign: 'left', color: view === 'dueSoon' ? '#ffffff' : '#58a6ff', fontSize: '1.05rem', cursor: 'pointer', fontWeight: view === 'dueSoon' ? 600 : 400 }}>Get Confirmation Statements due within 3 months</button>
 
+                            <div style={{ paddingTop: '12px', borderTop: '1px solid #1a1c2e', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                                <span style={{ color: '#a0a4b8', fontSize: '0.8rem', textTransform: 'uppercase', letterSpacing: '0.6px', fontWeight: 700 }}>Maintain</span>
+                                <button onClick={() => handleViewChange('charges')} style={{ background: 'none', border: 'none', padding: '6px 0', textAlign: 'left', color: view === 'charges' ? '#ffffff' : '#58a6ff', fontSize: '1.05rem', cursor: 'pointer', fontWeight: view === 'charges' ? 600 : 400 }}>Manage charges</button>
+                                <button onClick={() => handleViewChange('costs')} style={{ background: 'none', border: 'none', padding: '6px 0', textAlign: 'left', color: view === 'costs' ? '#ffffff' : '#58a6ff', fontSize: '1.05rem', cursor: 'pointer', fontWeight: view === 'costs' ? 600 : 400 }}>Manage costs</button>
+                            </div>
+
                             <div style={{ paddingTop: '14px', borderTop: '1px solid #1a1c2e', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
                                 <p style={{ margin: 0, color: '#a0a4b8', fontSize: '0.85rem', wordBreak: 'break-word' }}>
                                     Signed in as <strong style={{ color: '#ffffff' }}>{ADMIN_UID}</strong>
@@ -474,10 +850,61 @@ export default function RadioStation() {
                     </div>
                 )}
 
+                {/* MAINTAIN MENU PANEL (DESKTOP — POSITIONED NEXT TO MAIN SIDEBAR) */}
+                {!isMobile && (
+                    <aside style={{ width: '230px', flexShrink: 0, padding: '24px 16px', backgroundColor: '#030511', boxSizing: 'border-box', display: 'flex', flexDirection: 'column' }}>
+                        <div style={{
+                            flex: 1,
+                            backgroundColor: '#080b18',
+                            border: '1px solid #1a1c2e',
+                            borderRadius: '10px',
+                            padding: '24px 18px',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            gap: '16px',
+                            boxSizing: 'border-box',
+                        }}>
+                            <h2 style={{ color: '#ffffff', fontSize: '1.1rem', marginTop: 0, marginBottom: '4px', paddingBottom: '12px', borderBottom: '1px solid #1a1c2e' }}>
+                                Maintain
+                            </h2>
+                            <button
+                                onClick={() => handleViewChange('charges')}
+                                style={{
+                                    background: 'none',
+                                    border: 'none',
+                                    padding: 0,
+                                    textAlign: 'left',
+                                    color: view === 'charges' ? '#ffffff' : '#58a6ff',
+                                    fontSize: '1.02rem',
+                                    cursor: 'pointer',
+                                    fontWeight: view === 'charges' ? 600 : 400,
+                                }}
+                            >
+                                Manage charges
+                            </button>
+                            <button
+                                onClick={() => handleViewChange('costs')}
+                                style={{
+                                    background: 'none',
+                                    border: 'none',
+                                    padding: 0,
+                                    textAlign: 'left',
+                                    color: view === 'costs' ? '#ffffff' : '#58a6ff',
+                                    fontSize: '1.02rem',
+                                    cursor: 'pointer',
+                                    fontWeight: view === 'costs' ? 600 : 400,
+                                }}
+                            >
+                                Manage costs
+                            </button>
+                        </div>
+                    </aside>
+                )}
+
                 {/* MAIN CONTENT */}
                 <div style={{ flex: 1, width: '100%', display: 'flex', flexDirection: 'column', justifyContent: 'flex-start', alignItems: 'center', padding: isMobile ? '16px 16px 32px 16px' : '24px 32px 40px 32px', boxSizing: 'border-box' }}>
 
-                    {/* STATS BAR (2x2 GRID ON MOBILE, TOP-RIGHT PILL ON DESKTOP) */}
+                    {/* STATS BAR (CALCULATED FROM `transactions` TABLE) */}
                     <div style={{ width: '100%', display: 'flex', justifyContent: isMobile ? 'center' : 'flex-end', marginBottom: '24px' }}>
                         <div style={
                             isMobile
@@ -506,7 +933,7 @@ export default function RadioStation() {
                             <div style={{ display: 'flex', flexDirection: 'column', alignItems: isMobile ? 'flex-start' : 'flex-end' }}>
                                 <span style={{ color: '#a0a4b8', fontSize: '0.72rem', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Total Taken</span>
                                 <span style={{ color: '#58a6ff', fontSize: isMobile ? '1rem' : '1.1rem', fontWeight: 700 }}>
-                                    {balTrxLoading ? '...' : formatCurrency(balTrx.total_taken)}
+                                    {statsLoading ? '...' : formatCurrency(stats.total_taken)}
                                 </span>
                             </div>
 
@@ -515,7 +942,7 @@ export default function RadioStation() {
                             <div style={{ display: 'flex', flexDirection: 'column', alignItems: isMobile ? 'flex-start' : 'flex-end' }}>
                                 <span style={{ color: '#a0a4b8', fontSize: '0.72rem', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Total Transactions</span>
                                 <span style={{ color: '#ffffff', fontSize: isMobile ? '1rem' : '1.1rem', fontWeight: 700 }}>
-                                    {balTrxLoading ? '...' : balTrx.total_transactions.toLocaleString('en-GB')}
+                                    {statsLoading ? '...' : stats.total_transactions.toLocaleString('en-GB')}
                                 </span>
                             </div>
 
@@ -524,7 +951,7 @@ export default function RadioStation() {
                             <div style={{ display: 'flex', flexDirection: 'column', alignItems: isMobile ? 'flex-start' : 'flex-end' }}>
                                 <span style={{ color: '#a0a4b8', fontSize: '0.72rem', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Total Cost</span>
                                 <span style={{ color: '#ff6b6b', fontSize: isMobile ? '1rem' : '1.1rem', fontWeight: 700 }}>
-                                    {balTrxLoading ? '...' : formatCurrency(balTrx.total_cost)}
+                                    {statsLoading ? '...' : formatCurrency(stats.total_cost)}
                                 </span>
                             </div>
 
@@ -532,8 +959,8 @@ export default function RadioStation() {
 
                             <div style={{ display: 'flex', flexDirection: 'column', alignItems: isMobile ? 'flex-start' : 'flex-end' }}>
                                 <span style={{ color: '#a0a4b8', fontSize: '0.72rem', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Total Profit</span>
-                                <span style={{ color: balTrx.total_profit < 0 ? '#ff6b6b' : '#4ade80', fontSize: isMobile ? '1rem' : '1.1rem', fontWeight: 700 }}>
-                                    {balTrxLoading ? '...' : formatCurrency(balTrx.total_profit)}
+                                <span style={{ color: stats.total_profit < 0 ? '#ff6b6b' : '#4ade80', fontSize: isMobile ? '1rem' : '1.1rem', fontWeight: 700 }}>
+                                    {statsLoading ? '...' : formatCurrency(stats.total_profit)}
                                 </span>
                             </div>
                         </div>
@@ -742,6 +1169,330 @@ export default function RadioStation() {
                                 </div>
                             )}
                         </>
+                    )}
+
+                    {/* MANAGE CHARGES VIEW */}
+                    {view === 'charges' && (
+                        <div style={{ width: '100%', maxWidth: '700px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
+                                <div>
+                                    <h1 style={{ color: '#ffffff', fontSize: isMobile ? '1.5rem' : '2rem', margin: '0 0 6px 0' }}>Manage charges</h1>
+                                    <p style={{ color: '#a0a4b8', fontSize: '0.95rem', margin: 0 }}>
+                                        Add, update, or remove service fees stored in the charges table.
+                                    </p>
+                                </div>
+                                <button
+                                    type="button"
+                                    onClick={fetchCharges}
+                                    disabled={chargesLoading}
+                                    style={{ padding: '8px 14px', fontSize: '0.85rem', fontWeight: 600, borderRadius: '8px', border: '1px solid #1a1c2e', backgroundColor: '#0d1020', color: '#58a6ff', cursor: chargesLoading ? 'not-allowed' : 'pointer' }}
+                                >
+                                    ↻ Refresh
+                                </button>
+                            </div>
+
+                            {/* ADD NEW CHARGE FORM */}
+                            <div style={{ backgroundColor: '#0d1020', border: '1px solid #1a1c2e', borderRadius: '12px', padding: isMobile ? '16px' : '20px', boxSizing: 'border-box' }}>
+                                <h2 style={{ color: '#ffffff', fontSize: '1.05rem', marginTop: 0, marginBottom: '14px' }}>Add new charge</h2>
+                                <form onSubmit={handleAddCharge} style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: '10px' }}>
+                                    <input
+                                        type="text"
+                                        value={newChargeDesc}
+                                        onChange={(e) => setNewChargeDesc(e.target.value)}
+                                        placeholder="Description (e.g. Confirmation statement)"
+                                        required
+                                        style={{ flex: 2, width: '100%', boxSizing: 'border-box', padding: '10px 14px', fontSize: '16px', borderRadius: '8px', border: '1px solid #1a1c2e', backgroundColor: '#030511', color: '#ffffff', outline: 'none' }}
+                                    />
+                                    <input
+                                        type="number"
+                                        step="0.01"
+                                        min="0"
+                                        value={newChargeFee}
+                                        onChange={(e) => setNewChargeFee(e.target.value)}
+                                        placeholder="Fee (£)"
+                                        required
+                                        style={{ flex: 1, width: '100%', boxSizing: 'border-box', padding: '10px 14px', fontSize: '16px', borderRadius: '8px', border: '1px solid #1a1c2e', backgroundColor: '#030511', color: '#ffffff', outline: 'none' }}
+                                    />
+                                    <button
+                                        type="submit"
+                                        disabled={chargeSaving}
+                                        style={{ padding: '10px 20px', fontSize: '0.95rem', fontWeight: 600, borderRadius: '8px', border: 'none', backgroundColor: '#58a6ff', color: '#030511', cursor: chargeSaving ? 'not-allowed' : 'pointer', opacity: chargeSaving ? 0.6 : 1, whiteSpace: 'nowrap' }}
+                                    >
+                                        {chargeSaving ? 'Saving...' : '+ Add Charge'}
+                                    </button>
+                                </form>
+                            </div>
+
+                            {chargesError && (
+                                <p style={{ color: '#ff6b6b', fontSize: '0.92rem', margin: 0 }}>{chargesError}</p>
+                            )}
+                            {chargesSuccess && (
+                                <p style={{ color: '#4ade80', fontSize: '0.92rem', margin: 0 }}>{chargesSuccess}</p>
+                            )}
+
+                            {/* EXISTING CHARGES LIST */}
+                            <div style={{ backgroundColor: '#0d1020', border: '1px solid #1a1c2e', borderRadius: '12px', padding: isMobile ? '16px' : '20px', boxSizing: 'border-box', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                                <h2 style={{ color: '#ffffff', fontSize: '1.05rem', margin: 0 }}>Current charges</h2>
+
+                                {chargesLoading ? (
+                                    <p style={{ color: '#58a6ff', margin: '8px 0' }}>Loading charges...</p>
+                                ) : charges.length === 0 ? (
+                                    <p style={{ color: '#a0a4b8', margin: '8px 0' }}>No charges found yet. Add one above.</p>
+                                ) : (
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                                        {charges.map((item) => {
+                                            const isEditing = editingChargeId === item.id;
+                                            return (
+                                                <div
+                                                    key={item.id}
+                                                    style={{
+                                                        padding: '14px 16px',
+                                                        borderRadius: '8px',
+                                                        border: '1px solid #1a1c2e',
+                                                        backgroundColor: '#030511',
+                                                        display: 'flex',
+                                                        flexDirection: isMobile || isEditing ? 'column' : 'row',
+                                                        justifyContent: 'space-between',
+                                                        alignItems: isMobile || isEditing ? 'stretch' : 'center',
+                                                        gap: '12px',
+                                                    }}
+                                                >
+                                                    {isEditing ? (
+                                                        <>
+                                                            <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: '10px', flex: 1 }}>
+                                                                <input
+                                                                    type="text"
+                                                                    value={editChargeDesc}
+                                                                    onChange={(e) => setEditChargeDesc(e.target.value)}
+                                                                    placeholder="Description"
+                                                                    style={{ flex: 2, width: '100%', boxSizing: 'border-box', padding: '10px 12px', fontSize: '15px', borderRadius: '8px', border: '1px solid #1a1c2e', backgroundColor: '#0d1020', color: '#ffffff', outline: 'none' }}
+                                                                />
+                                                                <input
+                                                                    type="number"
+                                                                    step="0.01"
+                                                                    min="0"
+                                                                    value={editChargeFee}
+                                                                    onChange={(e) => setEditChargeFee(e.target.value)}
+                                                                    placeholder="Fee (£)"
+                                                                    style={{ flex: 1, width: '100%', boxSizing: 'border-box', padding: '10px 12px', fontSize: '15px', borderRadius: '8px', border: '1px solid #1a1c2e', backgroundColor: '#0d1020', color: '#ffffff', outline: 'none' }}
+                                                                />
+                                                            </div>
+                                                            <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => handleSaveEditCharge(item.id)}
+                                                                    disabled={chargeSaving}
+                                                                    style={{ padding: '8px 16px', fontSize: '0.88rem', fontWeight: 600, borderRadius: '8px', border: 'none', backgroundColor: '#4ade80', color: '#030511', cursor: chargeSaving ? 'not-allowed' : 'pointer' }}
+                                                                >
+                                                                    Save
+                                                                </button>
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={handleCancelEditCharge}
+                                                                    style={{ padding: '8px 14px', fontSize: '0.88rem', fontWeight: 600, borderRadius: '8px', border: '1px solid #1a1c2e', backgroundColor: 'transparent', color: '#a0a4b8', cursor: 'pointer' }}
+                                                                >
+                                                                    Cancel
+                                                                </button>
+                                                            </div>
+                                                        </>
+                                                    ) : (
+                                                        <>
+                                                            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                                                                <span style={{ color: '#ffffff', fontSize: '1rem', fontWeight: 600, wordBreak: 'break-word' }}>
+                                                                    {item.description}
+                                                                </span>
+                                                                <span style={{ color: '#4ade80', fontSize: '0.95rem', fontWeight: 700 }}>
+                                                                    {formatCurrency(item.fee)}
+                                                                </span>
+                                                            </div>
+                                                            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => handleStartEditCharge(item)}
+                                                                    style={{ padding: '8px 14px', fontSize: '0.85rem', fontWeight: 600, borderRadius: '8px', border: '1px solid #1a1c2e', backgroundColor: '#0d1020', color: '#58a6ff', cursor: 'pointer' }}
+                                                                >
+                                                                    Edit
+                                                                </button>
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => handleDeleteCharge(item.id)}
+                                                                    disabled={chargeSaving}
+                                                                    style={{ padding: '8px 14px', fontSize: '0.85rem', fontWeight: 600, borderRadius: '8px', border: '1px solid #1a1c2e', backgroundColor: '#0d1020', color: '#ff6b6b', cursor: chargeSaving ? 'not-allowed' : 'pointer' }}
+                                                                >
+                                                                    Delete
+                                                                </button>
+                                                            </div>
+                                                        </>
+                                                    )}
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    )}
+
+                    {/* MANAGE COSTS VIEW */}
+                    {view === 'costs' && (
+                        <div style={{ width: '100%', maxWidth: '700px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
+                                <div>
+                                    <h1 style={{ color: '#ffffff', fontSize: isMobile ? '1.5rem' : '2rem', margin: '0 0 6px 0' }}>Manage costs</h1>
+                                    <p style={{ color: '#a0a4b8', fontSize: '0.95rem', margin: 0 }}>
+                                        Add, update, or remove internal filing costs stored in the cost table.
+                                    </p>
+                                </div>
+                                <button
+                                    type="button"
+                                    onClick={fetchCosts}
+                                    disabled={costsLoading}
+                                    style={{ padding: '8px 14px', fontSize: '0.85rem', fontWeight: 600, borderRadius: '8px', border: '1px solid #1a1c2e', backgroundColor: '#0d1020', color: '#58a6ff', cursor: costsLoading ? 'not-allowed' : 'pointer' }}
+                                >
+                                    ↻ Refresh
+                                </button>
+                            </div>
+
+                            {/* ADD NEW COST FORM */}
+                            <div style={{ backgroundColor: '#0d1020', border: '1px solid #1a1c2e', borderRadius: '12px', padding: isMobile ? '16px' : '20px', boxSizing: 'border-box' }}>
+                                <h2 style={{ color: '#ffffff', fontSize: '1.05rem', marginTop: 0, marginBottom: '14px' }}>Add new cost</h2>
+                                <form onSubmit={handleAddCost} style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: '10px' }}>
+                                    <input
+                                        type="text"
+                                        value={newCostDesc}
+                                        onChange={(e) => setNewCostDesc(e.target.value)}
+                                        placeholder="Description (e.g. Confirmation statement)"
+                                        required
+                                        style={{ flex: 2, width: '100%', boxSizing: 'border-box', padding: '10px 14px', fontSize: '16px', borderRadius: '8px', border: '1px solid #1a1c2e', backgroundColor: '#030511', color: '#ffffff', outline: 'none' }}
+                                    />
+                                    <input
+                                        type="number"
+                                        step="0.01"
+                                        min="0"
+                                        value={newCostCharge}
+                                        onChange={(e) => setNewCostCharge(e.target.value)}
+                                        placeholder="Cost (£)"
+                                        required
+                                        style={{ flex: 1, width: '100%', boxSizing: 'border-box', padding: '10px 14px', fontSize: '16px', borderRadius: '8px', border: '1px solid #1a1c2e', backgroundColor: '#030511', color: '#ffffff', outline: 'none' }}
+                                    />
+                                    <button
+                                        type="submit"
+                                        disabled={costSaving}
+                                        style={{ padding: '10px 20px', fontSize: '0.95rem', fontWeight: 600, borderRadius: '8px', border: 'none', backgroundColor: '#58a6ff', color: '#030511', cursor: costSaving ? 'not-allowed' : 'pointer', opacity: costSaving ? 0.6 : 1, whiteSpace: 'nowrap' }}
+                                    >
+                                        {costSaving ? 'Saving...' : '+ Add Cost'}
+                                    </button>
+                                </form>
+                            </div>
+
+                            {costsError && (
+                                <p style={{ color: '#ff6b6b', fontSize: '0.92rem', margin: 0 }}>{costsError}</p>
+                            )}
+                            {costsSuccess && (
+                                <p style={{ color: '#4ade80', fontSize: '0.92rem', margin: 0 }}>{costsSuccess}</p>
+                            )}
+
+                            {/* EXISTING COSTS LIST */}
+                            <div style={{ backgroundColor: '#0d1020', border: '1px solid #1a1c2e', borderRadius: '12px', padding: isMobile ? '16px' : '20px', boxSizing: 'border-box', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                                <h2 style={{ color: '#ffffff', fontSize: '1.05rem', margin: 0 }}>Current costs</h2>
+
+                                {costsLoading ? (
+                                    <p style={{ color: '#58a6ff', margin: '8px 0' }}>Loading costs...</p>
+                                ) : costs.length === 0 ? (
+                                    <p style={{ color: '#a0a4b8', margin: '8px 0' }}>No costs found yet. Add one above.</p>
+                                ) : (
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                                        {costs.map((item) => {
+                                            const isEditing = editingCostId === item.id;
+                                            return (
+                                                <div
+                                                    key={item.id}
+                                                    style={{
+                                                        padding: '14px 16px',
+                                                        borderRadius: '8px',
+                                                        border: '1px solid #1a1c2e',
+                                                        backgroundColor: '#030511',
+                                                        display: 'flex',
+                                                        flexDirection: isMobile || isEditing ? 'column' : 'row',
+                                                        justifyContent: 'space-between',
+                                                        alignItems: isMobile || isEditing ? 'stretch' : 'center',
+                                                        gap: '12px',
+                                                    }}
+                                                >
+                                                    {isEditing ? (
+                                                        <>
+                                                            <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: '10px', flex: 1 }}>
+                                                                <input
+                                                                    type="text"
+                                                                    value={editCostDesc}
+                                                                    onChange={(e) => setEditCostDesc(e.target.value)}
+                                                                    placeholder="Description"
+                                                                    style={{ flex: 2, width: '100%', boxSizing: 'border-box', padding: '10px 12px', fontSize: '15px', borderRadius: '8px', border: '1px solid #1a1c2e', backgroundColor: '#0d1020', color: '#ffffff', outline: 'none' }}
+                                                                />
+                                                                <input
+                                                                    type="number"
+                                                                    step="0.01"
+                                                                    min="0"
+                                                                    value={editCostCharge}
+                                                                    onChange={(e) => setEditCostCharge(e.target.value)}
+                                                                    placeholder="Cost (£)"
+                                                                    style={{ flex: 1, width: '100%', boxSizing: 'border-box', padding: '10px 12px', fontSize: '15px', borderRadius: '8px', border: '1px solid #1a1c2e', backgroundColor: '#0d1020', color: '#ffffff', outline: 'none' }}
+                                                                />
+                                                            </div>
+                                                            <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => handleSaveEditCost(item.id)}
+                                                                    disabled={costSaving}
+                                                                    style={{ padding: '8px 16px', fontSize: '0.88rem', fontWeight: 600, borderRadius: '8px', border: 'none', backgroundColor: '#4ade80', color: '#030511', cursor: costSaving ? 'not-allowed' : 'pointer' }}
+                                                                >
+                                                                    Save
+                                                                </button>
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={handleCancelEditCost}
+                                                                    style={{ padding: '8px 14px', fontSize: '0.88rem', fontWeight: 600, borderRadius: '8px', border: '1px solid #1a1c2e', backgroundColor: 'transparent', color: '#a0a4b8', cursor: 'pointer' }}
+                                                                >
+                                                                    Cancel
+                                                                </button>
+                                                            </div>
+                                                        </>
+                                                    ) : (
+                                                        <>
+                                                            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                                                                <span style={{ color: '#ffffff', fontSize: '1rem', fontWeight: 600, wordBreak: 'break-word' }}>
+                                                                    {item.description}
+                                                                </span>
+                                                                <span style={{ color: '#ff6b6b', fontSize: '0.95rem', fontWeight: 700 }}>
+                                                                    {formatCurrency(item.charge)}
+                                                                </span>
+                                                            </div>
+                                                            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => handleStartEditCost(item)}
+                                                                    style={{ padding: '8px 14px', fontSize: '0.85rem', fontWeight: 600, borderRadius: '8px', border: '1px solid #1a1c2e', backgroundColor: '#0d1020', color: '#58a6ff', cursor: 'pointer' }}
+                                                                >
+                                                                    Edit
+                                                                </button>
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => handleDeleteCost(item.id)}
+                                                                    disabled={costSaving}
+                                                                    style={{ padding: '8px 14px', fontSize: '0.85rem', fontWeight: 600, borderRadius: '8px', border: '1px solid #1a1c2e', backgroundColor: '#0d1020', color: '#ff6b6b', cursor: costSaving ? 'not-allowed' : 'pointer' }}
+                                                                >
+                                                                    Delete
+                                                                </button>
+                                                            </div>
+                                                        </>
+                                                    )}
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                )}
+                            </div>
+                        </div>
                     )}
                 </div>
             </div>

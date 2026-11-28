@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect } from 'react';
+﻿import React, { useState, useEffect, useRef } from 'react';
 
 // Use the key directly or fallback to env variable if you set one up later
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || 'sb_publishable_oGXmxWNXvypN8XyjM71sBA_b_DINXJo';
@@ -71,7 +71,6 @@ export default function ClientApp() {
             const saved = localStorage.getItem(CLIENT_STORAGE_KEY);
             if (!saved) return null;
             const parsed = JSON.parse(saved);
-            // If URL params are provided for a different company/email, require login for the new link
             const { companyNumber, email } = getUrlParams();
             if (
                 companyNumber &&
@@ -128,6 +127,7 @@ export default function ClientApp() {
         return null;
     });
     const [paymentCompleted, setPaymentCompleted] = useState(() => getUrlParams().paymentStatus === 'success');
+    const transactionRecordedRef = useRef(false);
 
     // In-portal email update state
     const [isEditingEmail, setIsEditingEmail] = useState(false);
@@ -147,6 +147,74 @@ export default function ClientApp() {
         Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
         'Content-Type': 'application/json',
     };
+
+    // ─── Record payment into `transactions` table when returning from Stripe ───
+    useEffect(() => {
+        if (!clientSession?.company_number) return;
+        if (urlParams.paymentStatus !== 'success') return;
+        if (transactionRecordedRef.current) return;
+
+        transactionRecordedRef.current = true;
+
+        const recordTransaction = async () => {
+            try {
+                // Fetch both the charged fee (`charges`) and internal cost (`cost`)
+                const [chargeRes, costRes] = await Promise.all([
+                    fetch(
+                        `${SUPABASE_URL}/rest/v1/charges?description=ilike.*confirmation*statement*&select=fee&limit=1`,
+                        { method: 'GET', headers: supabaseHeaders }
+                    ),
+                    fetch(
+                        `${SUPABASE_URL}/rest/v1/cost?description=ilike.*confirmation*statement*&select=charge&limit=1`,
+                        { method: 'GET', headers: supabaseHeaders }
+                    ),
+                ]);
+
+                let totalCharged = 70;
+                if (chargeRes.ok) {
+                    const chargeData = await chargeRes.json();
+                    if (Array.isArray(chargeData) && chargeData.length > 0 && chargeData[0].fee !== null) {
+                        totalCharged = Number(chargeData[0].fee);
+                    }
+                }
+
+                let costValue = 0;
+                if (costRes.ok) {
+                    const costData = await costRes.json();
+                    if (Array.isArray(costData) && costData.length > 0 && costData[0].charge !== null) {
+                        costValue = Number(costData[0].charge);
+                    }
+                }
+
+                const insertRes = await fetch(`${SUPABASE_URL}/rest/v1/transactions`, {
+                    method: 'POST',
+                    headers: { ...supabaseHeaders, Prefer: 'return=representation' },
+                    body: JSON.stringify({
+                        trndate: new Date().toISOString(),
+                        company_number: clientSession.company_number.trim().toUpperCase(),
+                        total_charged: totalCharged,
+                        cost: costValue,
+                    }),
+                });
+
+                if (!insertRes.ok) {
+                    const errText = await insertRes.text();
+                    throw new Error(`Could not record transaction (${insertRes.status}): ${errText}`);
+                }
+
+                // Remove `payment=success` from the URL so refreshing does not insert a duplicate row
+                if (typeof window !== 'undefined') {
+                    const cleanUrl = new URL(window.location.href);
+                    cleanUrl.searchParams.delete('payment');
+                    window.history.replaceState({}, '', cleanUrl.toString());
+                }
+            } catch (err) {
+                console.error('[Record Transaction Error]', err);
+            }
+        };
+
+        recordTransaction();
+    }, [clientSession?.company_number, urlParams.paymentStatus]);
 
     // ─── Check if user already has a password in `users` table ───
     useEffect(() => {
@@ -814,6 +882,7 @@ export default function ClientApp() {
         setShowFilingSteps(false);
         setPaymentMessage(null);
         setPaymentCompleted(false);
+        transactionRecordedRef.current = false;
         setView('company');
         setMobileMenuOpen(false);
         setError(null);
