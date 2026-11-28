@@ -242,6 +242,36 @@ export default function ClientApp() {
         return dueDate < today;
     };
 
+    const getEstimatedCorpTaxDates = (madeUpToDate) => {
+        if (!madeUpToDate || typeof madeUpToDate !== 'string') {
+            return { paymentDue: null, returnDue: null };
+        }
+        const parts = madeUpToDate.split('-').map(Number);
+        if (parts.length !== 3 || parts.some(isNaN)) {
+            return { paymentDue: null, returnDue: null };
+        }
+
+        const [year, month, day] = parts;
+        const lastDayOfOrigMonth = new Date(Date.UTC(year, month, 0)).getUTCDate();
+
+        let paymentDate;
+        let returnDate;
+
+        if (day === lastDayOfOrigMonth) {
+            // Month-end accounting period: payment is 1st of the 10th month after; return is end of same month next year
+            paymentDate = new Date(Date.UTC(year, month + 9, 1));
+            returnDate = new Date(Date.UTC(year + 1, month, 0));
+        } else {
+            paymentDate = new Date(Date.UTC(year, month - 1 + 9, day + 1));
+            returnDate = new Date(Date.UTC(year + 1, month - 1, day));
+        }
+
+        return {
+            paymentDue: paymentDate.toISOString().split('T')[0],
+            returnDue: returnDate.toISOString().split('T')[0],
+        };
+    };
+
     const formatStatus = (status) => {
         if (!status) return 'Unknown';
         return status
@@ -715,12 +745,29 @@ export default function ClientApp() {
     // Derived display values
     const displayCompanyName = chProfile?.company_name || companyRecord?.company_name || 'Your Company';
     const displayCompanyNumber = companyRecord?.company_number || clientSession?.company_number || '';
+
+    // Confirmation statement dates
     const nextStatementDue =
         chProfile?.confirmation_statement?.next_due || companyRecord?.next_confirmation_statement || null;
     const dueSoon =
         Boolean(chProfile?.confirmation_statement?.overdue) || isDueWithinThreeMonths(nextStatementDue);
     const overdue =
         Boolean(chProfile?.confirmation_statement?.overdue) || isOverdue(nextStatementDue);
+
+    // Annual accounts dates (from Companies House)
+    const nextAccountsDue = chProfile?.accounts?.next_due || null;
+    const nextAccountsMadeUpTo = chProfile?.accounts?.next_made_up_to || null;
+    const lastAccountsMadeUpTo = chProfile?.accounts?.last_accounts?.made_up_to || null;
+    const accountsDueSoon =
+        Boolean(chProfile?.accounts?.overdue) || isDueWithinThreeMonths(nextAccountsDue);
+    const accountsOverdue =
+        Boolean(chProfile?.accounts?.overdue) || isOverdue(nextAccountsDue);
+
+    // Estimated Corporation Tax dates (calculated from accounting period end date)
+    const { paymentDue: estCorpTaxPaymentDue, returnDue: estCorpTaxReturnDue } =
+        getEstimatedCorpTaxDates(nextAccountsMadeUpTo);
+    const corpTaxDueSoon = isDueWithinThreeMonths(estCorpTaxPaymentDue);
+    const corpTaxOverdue = isOverdue(estCorpTaxPaymentDue);
 
     // Check if this due period has already been approved
     const alreadyApproved = filingHistory.some(
@@ -994,7 +1041,7 @@ export default function ClientApp() {
                         <div style={{
                             width: '100%',
                             display: 'grid',
-                            gridTemplateColumns: isMobile ? '1fr' : 'repeat(3, 1fr)',
+                            gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fit, minmax(140px, 1fr))',
                             gap: '12px',
                             backgroundColor: '#0d1020',
                             border: '1px solid #1a1c2e',
@@ -1004,21 +1051,35 @@ export default function ClientApp() {
                         }}>
                             <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                                 <span style={{ color: '#a0a4b8', fontSize: '0.72rem', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Next Statement Due</span>
-                                <span style={{ color: dueSoon ? '#ff6b6b' : '#58a6ff', fontSize: '1.05rem', fontWeight: 700 }}>
+                                <span style={{ color: dueSoon ? '#ff6b6b' : '#58a6ff', fontSize: '1rem', fontWeight: 700 }}>
                                     {loading ? '...' : formatDate(nextStatementDue)}
                                 </span>
                             </div>
 
                             <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                                <span style={{ color: '#a0a4b8', fontSize: '0.72rem', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Annual Accounts Due</span>
+                                <span style={{ color: accountsDueSoon ? '#ff6b6b' : '#58a6ff', fontSize: '1rem', fontWeight: 700 }}>
+                                    {loading ? '...' : formatDate(nextAccountsDue)}
+                                </span>
+                            </div>
+
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                                <span style={{ color: '#a0a4b8', fontSize: '0.72rem', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Est. Corp Tax Due</span>
+                                <span style={{ color: corpTaxDueSoon ? '#ff6b6b' : '#fbbf24', fontSize: '1rem', fontWeight: 700 }}>
+                                    {loading ? '...' : formatDate(estCorpTaxPaymentDue)}
+                                </span>
+                            </div>
+
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                                 <span style={{ color: '#a0a4b8', fontSize: '0.72rem', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Active Directors</span>
-                                <span style={{ color: '#ffffff', fontSize: '1.05rem', fontWeight: 700 }}>
+                                <span style={{ color: '#ffffff', fontSize: '1rem', fontWeight: 700 }}>
                                     {loading ? '...' : directors.length}
                                 </span>
                             </div>
 
                             <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                                 <span style={{ color: '#a0a4b8', fontSize: '0.72rem', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Filed via NoirSoft</span>
-                                <span style={{ color: '#4ade80', fontSize: '1.05rem', fontWeight: 700 }}>
+                                <span style={{ color: '#4ade80', fontSize: '1rem', fontWeight: 700 }}>
                                     {loading ? '...' : `${filingHistory.length} ${filingHistory.length === 1 ? 'Statement' : 'Statements'}`}
                                 </span>
                             </div>
@@ -1170,7 +1231,52 @@ export default function ClientApp() {
                                         <span style={{ display: 'block', color: '#a0a4b8', fontSize: '0.85rem', marginBottom: '4px' }}>Last Statement Made Up To</span>
                                         <span style={{ color: '#ffffff', fontSize: '1rem' }}>{formatDate(chProfile?.confirmation_statement?.last_made_up_to)}</span>
                                     </div>
+
+                                    <div>
+                                        <span style={{ display: 'block', color: '#a0a4b8', fontSize: '0.85rem', marginBottom: '4px' }}>Next Annual Accounts Due</span>
+                                        <span style={{ color: accountsDueSoon ? '#ff6b6b' : '#ffffff', fontSize: '1rem', fontWeight: 600 }}>
+                                            {formatDate(nextAccountsDue)}
+                                        </span>
+                                        {accountsDueSoon && (
+                                            <span style={{ display: 'inline-block', marginLeft: '8px', padding: '2px 8px', borderRadius: '10px', backgroundColor: '#e53e3e', color: '#ffffff', fontSize: '0.72rem', fontWeight: 600 }}>
+                                                {accountsOverdue ? 'Overdue' : 'Due soon'}
+                                            </span>
+                                        )}
+                                    </div>
+
+                                    <div>
+                                        <span style={{ display: 'block', color: '#a0a4b8', fontSize: '0.85rem', marginBottom: '4px' }}>Next Accounts Made Up To</span>
+                                        <span style={{ color: '#ffffff', fontSize: '1rem' }}>{formatDate(nextAccountsMadeUpTo)}</span>
+                                        {lastAccountsMadeUpTo && (
+                                            <span style={{ display: 'block', color: '#a0a4b8', fontSize: '0.78rem', marginTop: '2px' }}>
+                                                Last accounts made up to {formatDate(lastAccountsMadeUpTo)}
+                                            </span>
+                                        )}
+                                    </div>
+
+                                    <div>
+                                        <span style={{ display: 'block', color: '#a0a4b8', fontSize: '0.85rem', marginBottom: '4px' }}>Est. Corporation Tax Payment Due</span>
+                                        <span style={{ color: corpTaxDueSoon ? '#ff6b6b' : '#fbbf24', fontSize: '1rem', fontWeight: 600 }}>
+                                            {formatDate(estCorpTaxPaymentDue)}
+                                        </span>
+                                        {corpTaxDueSoon && (
+                                            <span style={{ display: 'inline-block', marginLeft: '8px', padding: '2px 8px', borderRadius: '10px', backgroundColor: '#e53e3e', color: '#ffffff', fontSize: '0.72rem', fontWeight: 600 }}>
+                                                {corpTaxOverdue ? 'Overdue' : 'Due soon'}
+                                            </span>
+                                        )}
+                                    </div>
+
+                                    <div>
+                                        <span style={{ display: 'block', color: '#a0a4b8', fontSize: '0.85rem', marginBottom: '4px' }}>Est. Company Tax Return (CT600) Due</span>
+                                        <span style={{ color: '#ffffff', fontSize: '1rem', fontWeight: 600 }}>
+                                            {formatDate(estCorpTaxReturnDue)}
+                                        </span>
+                                    </div>
                                 </div>
+
+                                <p style={{ color: '#a0a4b8', fontSize: '0.78rem', margin: 0, lineHeight: 1.4 }}>
+                                    * Corporation Tax dates are estimated from your Companies House accounting period end date (9 months and 1 day for payment; 12 months for CT600). Always confirm exact deadlines with HMRC, especially for your first accounting period or dormant companies.
+                                </p>
 
                                 <div style={{ borderTop: '1px solid #1a1c2e', paddingTop: '16px' }}>
                                     <span style={{ display: 'block', color: '#a0a4b8', fontSize: '0.85rem', marginBottom: '4px' }}>Registered Office Address</span>
