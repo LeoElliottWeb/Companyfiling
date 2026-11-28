@@ -3,6 +3,10 @@
     {
       "source": "/api/ch/:path*",
       "destination": "https://api.company-information.service.gov.uk/:path*"
+    },
+    {
+      "source": "/(.*)",
+      "destination": "/index.html"
     }
   ]
 }
