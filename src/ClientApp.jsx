@@ -102,6 +102,10 @@ export default function ClientApp() {
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState(null);
 
+    // Filing approval state
+    const [approvalLoading, setApprovalLoading] = useState(false);
+    const [approvalMessage, setApprovalMessage] = useState(null);
+
     // In-portal email update state
     const [isEditingEmail, setIsEditingEmail] = useState(false);
     const [emailInput, setEmailInput] = useState('');
@@ -218,13 +222,24 @@ export default function ClientApp() {
     const isDueWithinThreeMonths = (dateString) => {
         if (!dateString) return false;
         const dueDate = new Date(dateString);
+        if (isNaN(dueDate.getTime())) return false;
         const today = new Date();
         const threeMonthsFromNow = new Date();
         threeMonthsFromNow.setMonth(today.getMonth() + 3);
         dueDate.setHours(0, 0, 0, 0);
         today.setHours(0, 0, 0, 0);
         threeMonthsFromNow.setHours(0, 0, 0, 0);
-        return dueDate >= today && dueDate <= threeMonthsFromNow;
+        return dueDate <= threeMonthsFromNow;
+    };
+
+    const isOverdue = (dateString) => {
+        if (!dateString) return false;
+        const dueDate = new Date(dateString);
+        if (isNaN(dueDate.getTime())) return false;
+        const today = new Date();
+        dueDate.setHours(0, 0, 0, 0);
+        today.setHours(0, 0, 0, 0);
+        return dueDate < today;
     };
 
     const formatStatus = (status) => {
@@ -279,7 +294,6 @@ export default function ClientApp() {
             let savedUser = null;
 
             if (existingUser?.id) {
-                // Update existing user row that had no password yet
                 const res = await fetch(`${SUPABASE_URL}/rest/v1/users?id=eq.${existingUser.id}`, {
                     method: 'PATCH',
                     headers: { ...supabaseHeaders, Prefer: 'return=representation' },
@@ -289,7 +303,6 @@ export default function ClientApp() {
                 const data = await res.json();
                 savedUser = Array.isArray(data) ? data[0] : existingUser;
             } else {
-                // Create new user row
                 const res = await fetch(`${SUPABASE_URL}/rest/v1/users`, {
                     method: 'POST',
                     headers: { ...supabaseHeaders, Prefer: 'return=representation' },
@@ -456,7 +469,6 @@ export default function ClientApp() {
             const currentHashed = await hashPassword(currentPwd);
             const newHashed = await hashPassword(newPwd);
 
-            // Verify current password
             const checkRes = await fetch(
                 `${SUPABASE_URL}/rest/v1/users?company_number=eq.${encodeURIComponent(
                     clientSession.company_number
@@ -475,7 +487,6 @@ export default function ClientApp() {
                 return;
             }
 
-            // Update password
             const updateRes = await fetch(`${SUPABASE_URL}/rest/v1/users?id=eq.${users[0].id}`, {
                 method: 'PATCH',
                 headers: supabaseHeaders,
@@ -580,6 +591,58 @@ export default function ClientApp() {
         }
     }, [clientSession]);
 
+    // ─── Approve Confirmation Statement Filing ───
+    const handleApproveFiling = async () => {
+        if (!displayCompanyNumber) return;
+
+        setApprovalLoading(true);
+        setApprovalMessage(null);
+
+        try {
+            const todayIso = new Date().toISOString().split('T')[0];
+            const statementDate =
+                chProfile?.confirmation_statement?.next_made_up_to ||
+                nextStatementDue ||
+                todayIso;
+
+            const res = await fetch(`${SUPABASE_URL}/rest/v1/confirmation_statements`, {
+                method: 'POST',
+                headers: { ...supabaseHeaders, Prefer: 'return=representation' },
+                body: JSON.stringify({
+                    company_number: displayCompanyNumber,
+                    filed_date: todayIso,
+                    statement_date: statementDate,
+                    status: 'Approved',
+                }),
+            });
+
+            if (!res.ok) {
+                const errText = await res.text();
+                throw new Error(`Could not record filing approval (${res.status}): ${errText}`);
+            }
+
+            const inserted = await res.json();
+            if (Array.isArray(inserted) && inserted.length > 0) {
+                setFilingHistory((prev) => [inserted[0], ...prev]);
+            } else {
+                await loadClientData(displayCompanyNumber);
+            }
+
+            setApprovalMessage({
+                type: 'success',
+                text: 'Filing approved! We have queued your confirmation statement for submission.',
+            });
+        } catch (err) {
+            console.error('[Approve Filing Error]', err);
+            setApprovalMessage({
+                type: 'error',
+                text: err.message || 'Could not approve filing. Please try again.',
+            });
+        } finally {
+            setApprovalLoading(false);
+        }
+    };
+
     // ─── Handle Client Logout ───
     const handleLogout = () => {
         localStorage.removeItem(CLIENT_STORAGE_KEY);
@@ -593,6 +656,7 @@ export default function ClientApp() {
         setError(null);
         setEmailMessage(null);
         setPwdMessage(null);
+        setApprovalMessage(null);
         setIsEditingEmail(false);
         setAuthError(null);
         setAuthSuccess(null);
@@ -653,7 +717,15 @@ export default function ClientApp() {
     const displayCompanyNumber = companyRecord?.company_number || clientSession?.company_number || '';
     const nextStatementDue =
         chProfile?.confirmation_statement?.next_due || companyRecord?.next_confirmation_statement || null;
-    const dueSoon = isDueWithinThreeMonths(nextStatementDue);
+    const dueSoon =
+        Boolean(chProfile?.confirmation_statement?.overdue) || isDueWithinThreeMonths(nextStatementDue);
+    const overdue =
+        Boolean(chProfile?.confirmation_statement?.overdue) || isOverdue(nextStatementDue);
+
+    // Check if this due period has already been approved
+    const alreadyApproved = filingHistory.some(
+        (item) => (item.status || '').toLowerCase() === 'approved'
+    );
 
     // ─── AUTH / LOGIN / FIRST VISIT / PASSWORD RESET SCREEN ───
     if (!clientSession) {
@@ -918,7 +990,7 @@ export default function ClientApp() {
                 <div style={{ flex: 1, width: '100%', display: 'flex', flexDirection: 'column', justifyContent: 'flex-start', alignItems: 'center', padding: isMobile ? '16px 16px 32px 16px' : '24px 32px 40px 32px', boxSizing: 'border-box' }}>
 
                     {/* SUMMARY BAR */}
-                    <div style={{ width: '100%', maxWidth: '800px', marginBottom: '24px' }}>
+                    <div style={{ width: '100%', maxWidth: '800px', marginBottom: '20px' }}>
                         <div style={{
                             width: '100%',
                             display: 'grid',
@@ -952,6 +1024,82 @@ export default function ClientApp() {
                             </div>
                         </div>
                     </div>
+
+                    {/* APPROVE FILING BANNER (SHOWN WHEN CONFIRMATION STATEMENT IS DUE) */}
+                    {!loading && dueSoon && (
+                        <div style={{
+                            width: '100%',
+                            maxWidth: '800px',
+                            marginBottom: '24px',
+                            backgroundColor: '#0d1020',
+                            border: `1px solid ${overdue ? '#e53e3e' : '#58a6ff'}`,
+                            borderRadius: '12px',
+                            padding: isMobile ? '16px' : '18px 24px',
+                            boxSizing: 'border-box',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            gap: '12px',
+                        }}>
+                            <div style={{
+                                display: 'flex',
+                                flexDirection: isMobile ? 'column' : 'row',
+                                justifyContent: 'space-between',
+                                alignItems: isMobile ? 'stretch' : 'center',
+                                gap: '14px',
+                            }}>
+                                <div>
+                                    <span style={{
+                                        color: overdue ? '#ff6b6b' : '#ffffff',
+                                        fontSize: '1.05rem',
+                                        fontWeight: 700,
+                                        display: 'block',
+                                        marginBottom: '4px',
+                                    }}>
+                                        {overdue
+                                            ? 'Confirmation statement overdue'
+                                            : 'Confirmation statement due'}
+                                    </span>
+                                    <span style={{ color: '#a0a4b8', fontSize: '0.9rem' }}>
+                                        Due date: <strong style={{ color: '#ffffff' }}>{formatDate(nextStatementDue)}</strong>. Review your company and director details, then approve filing.
+                                    </span>
+                                </div>
+
+                                <button
+                                    type="button"
+                                    onClick={handleApproveFiling}
+                                    disabled={approvalLoading || alreadyApproved}
+                                    style={{
+                                        padding: '12px 22px',
+                                        fontSize: '0.95rem',
+                                        fontWeight: 700,
+                                        borderRadius: '8px',
+                                        border: 'none',
+                                        backgroundColor: alreadyApproved ? '#1f2937' : '#4ade80',
+                                        color: alreadyApproved ? '#9ca3af' : '#030511',
+                                        cursor: approvalLoading || alreadyApproved ? 'not-allowed' : 'pointer',
+                                        opacity: approvalLoading ? 0.6 : 1,
+                                        whiteSpace: 'nowrap',
+                                    }}
+                                >
+                                    {approvalLoading
+                                        ? 'Approving...'
+                                        : alreadyApproved
+                                            ? '✓ Filing Approved'
+                                            : 'Approve filing'}
+                                </button>
+                            </div>
+
+                            {approvalMessage && (
+                                <p style={{
+                                    color: approvalMessage.type === 'success' ? '#4ade80' : '#ff6b6b',
+                                    fontSize: '0.9rem',
+                                    margin: 0,
+                                }}>
+                                    {approvalMessage.text}
+                                </p>
+                            )}
+                        </div>
+                    )}
 
                     {loading && <p style={{ color: '#58a6ff', marginBottom: '20px' }}>Loading your company portal...</p>}
                     {error && <p style={{ color: '#ff6b6b', textAlign: 'center', maxWidth: '600px', marginBottom: '20px' }}>{error}</p>}
@@ -1013,7 +1161,7 @@ export default function ClientApp() {
                                         </span>
                                         {dueSoon && (
                                             <span style={{ display: 'inline-block', marginLeft: '8px', padding: '2px 8px', borderRadius: '10px', backgroundColor: '#e53e3e', color: '#ffffff', fontSize: '0.72rem', fontWeight: 600 }}>
-                                                Due soon
+                                                {overdue ? 'Overdue' : 'Due soon'}
                                             </span>
                                         )}
                                     </div>
@@ -1164,7 +1312,7 @@ export default function ClientApp() {
                                 <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                                     {filingHistory.map((item) => {
                                         const statusLower = (item.status || 'filed').toLowerCase();
-                                        const isCompleted = statusLower === 'filed' || statusLower === 'completed' || statusLower === 'accepted';
+                                        const isCompleted = statusLower === 'filed' || statusLower === 'completed' || statusLower === 'accepted' || statusLower === 'approved';
                                         const isFailed = statusLower === 'failed' || statusLower === 'rejected';
 
                                         return (
@@ -1178,7 +1326,7 @@ export default function ClientApp() {
                                                             Confirmation Statement (CS01)
                                                         </span>
                                                         <span style={{ color: '#a0a4b8', fontSize: '0.88rem' }}>
-                                                            Filed on {formatDate(item.filed_date || item.created_at)}
+                                                            {statusLower === 'approved' ? 'Approved on' : 'Filed on'} {formatDate(item.filed_date || item.created_at)}
                                                         </span>
                                                     </div>
 
